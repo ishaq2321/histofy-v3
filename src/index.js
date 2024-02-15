@@ -136,6 +136,7 @@ function setupCommands() {
       .option('-s, --spread <days>', 'Spread commits over N days', '1')
       .option('-t, --start-time <time>', 'Start time for first commit', '09:00')
       .option('--preserve-order', 'Preserve original commit order')
+      .option('--execute', 'Execute the migration automatically (default: plan only)')
       .action(async (range, options) => {
         try {
           const migrateCommand = require('./cli/migrate');

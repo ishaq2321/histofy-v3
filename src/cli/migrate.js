@@ -53,11 +53,29 @@ async function migrateCommand(commitRange, options) {
         console.log(chalk.yellow(`⚠️  ${result.warning}`));
       }
 
-      console.log(chalk.blue('\n💡 To complete the migration:'));
-      console.log(chalk.gray('1. This operation requires interactive rebase'));
-      console.log(chalk.gray('2. Use git rebase -i to manually adjust commit dates'));
-      console.log(chalk.gray('3. Or use a specialized tool for batch date modification'));
-      
+      // Check if execute flag is provided
+      if (options.execute) {
+        console.log(chalk.blue('\n🚀 Executing migration...\n'));
+        
+        const executeResult = await gitManager.executeMigration(result.commits);
+        
+        if (executeResult.success) {
+          console.log(chalk.green('✅ Migration completed successfully!'));
+          console.log(chalk.gray(`   ${executeResult.migratedCount} commit(s) migrated`));
+          console.log(chalk.blue('\n💡 Next steps:'));
+          console.log(chalk.gray('1. Verify the changes with: git log --oneline -10'));
+          console.log(chalk.gray('2. Push changes with: git push --force-with-lease origin <branch>'));
+        } else {
+          console.error(chalk.red(`❌ Migration execution failed: ${executeResult.error}`));
+        }
+      } else {
+        console.log(chalk.blue('\n💡 To execute this migration:'));
+        console.log(chalk.gray(`   histofy migrate ${commitRange} --to-date "${options.toDate}" --execute`));
+        console.log(chalk.blue('\n💡 Or complete manually:'));
+        console.log(chalk.gray('1. This operation requires interactive rebase'));
+        console.log(chalk.gray('2. Use git rebase -i to manually adjust commit dates'));
+        console.log(chalk.gray('3. Or use a specialized tool for batch date modification'));
+      }
     } else {
       console.error(chalk.red(`❌ Migration failed: ${result.error}`));
     }

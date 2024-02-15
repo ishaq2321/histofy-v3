@@ -225,6 +225,62 @@ class GitManager {
   }
 
   /**
+   * Execute migration by actually changing commit dates
+   */
+  async executeMigration(migrationPlan) {
+    try {
+      const migratedCommits = [];
+      
+      // Sort commits by original date to process in correct order
+      const sortedCommits = migrationPlan.sort((a, b) => 
+        new Date(a.originalDate) - new Date(b.originalDate)
+      );
+
+      for (const commit of sortedCommits) {
+        try {
+          // Use git filter-branch or rebase to change the commit date
+          const newDate = commit.newDate;
+          const commitHash = commit.originalHash;
+
+          // Method 1: Using git filter-branch for individual commits
+          await this.git.raw([
+            'filter-branch', '-f', '--env-filter',
+            `if [ $GIT_COMMIT = ${commitHash} ]
+             then
+                 export GIT_AUTHOR_DATE="${newDate}"
+                 export GIT_COMMITTER_DATE="${newDate}"
+             fi`,
+            '--', '--all'
+          ]);
+
+          migratedCommits.push(commit);
+        } catch (commitError) {
+          // If filter-branch fails, try alternative method
+          console.warn(`Warning: Failed to migrate commit ${commit.originalHash}: ${commitError.message}`);
+        }
+      }
+
+      // Clean up filter-branch refs
+      try {
+        await this.git.raw(['update-ref', '-d', 'refs/original/refs/heads/master']);
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+      }
+
+      return {
+        success: true,
+        migratedCount: migratedCommits.length,
+        migrations: migratedCommits
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: `Migration execution failed: ${error.message}`
+      };
+    }
+  }
+
+  /**
    * Get repository information
    */
   async getRepoInfo() {
