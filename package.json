@@ -1,0 +1,57 @@
+{
+  "name": "histofy-cli",
+  "version": "3.0.0",
+  "description": "Terminal-based GitHub history manipulation tool with custom commit dates",
+  "main": "src/index.js",
+  "bin": {
+    "histofy": "./bin/histofy"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest",
+    "build": "pkg . --out-path dist/",
+    "install-global": "npm install -g .",
+    "setup-shell": "bash shell/install.sh"
+  },
+  "keywords": [
+    "git",
+    "github",
+    "history",
+    "commits",
+    "cli",
+    "developer-tools"
+  ],
+  "author": "Histofy Team",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^11.1.0",
+    "chalk": "^4.1.2",
+    "inquirer": "^8.2.6",
+    "axios": "^1.6.2",
+    "moment": "^2.29.4",
+    "simple-git": "^3.20.0",
+    "ora": "^5.4.1",
+    "cli-table3": "^0.6.3",
+    "boxen": "^5.1.2",
+    "figlet": "^1.7.0",
+    "yaml": "^2.3.4",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2",
+    "jest": "^29.7.0",
+    "pkg": "^5.8.1"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/histofy/histofy-v3.git"
+  },
+  "bugs": {
+    "url": "https://github.com/histofy/histofy-v3/issues"
+  },
+  "homepage": "https://histofy.com"
+}
