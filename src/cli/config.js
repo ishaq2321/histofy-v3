@@ -1,3 +1,12 @@
+/**
+ * Histofy v3 - Terminal-based GitHub history manipulation tool
+ * Copyright (c) 2025 Ishaq (ishaq2321@proton.me)
+ * Licensed under MIT License - https://opensource.org/licenses/MIT
+ * 
+ * Original creation date: 2025-06-09
+ * Repository: https://github.com/ishaq2321/histofy-v3
+ */
+
 const chalk = require('chalk');
 const inquirer = require('inquirer');
 const ConfigManager = require('../config/ConfigManager');

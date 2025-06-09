@@ -362,18 +362,20 @@ histofy-v3/
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- Built on top of the original Histofy project
-- Inspired by the GitHub contribution graph
-- Thanks to all contributors and users
-
 ## 📞 Support
 
-- 📧 Email: support@histofy.com
+- 📧 Email: ishaq2321@proton.me
 - 🐛 Issues: [GitHub Issues](https://github.com/histofy/histofy-v3/issues)
 - 💬 Discussions: [GitHub Discussions](https://github.com/histofy/histofy-v3/discussions)
 
 ---
 
-**Made with ❤️ by the Histofy Team**
+<div align="center">
+
+**Built with 💚 in solidarity with Palestine 🇵🇸**
+
+*"In the face of injustice, silence is complicity. We stand with the Palestinian people in their struggle for freedom, dignity, and human rights."*
+
+🟢⚪🔴 **#FreePalestine** 🔴⚪🟢
+
+</div>

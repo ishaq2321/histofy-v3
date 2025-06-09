@@ -1,1 +1,15 @@
 node_modules
+*.log
+.env
+.DS_Store
+
+# Development files
+debug-*.js
+test-*.js
+setup-*.js
+add-copyright.sh
+
+# Launch materials
+LAUNCH_*.md
+DEVELOPMENT_*.txt
+PROJECT_STATS.txt
