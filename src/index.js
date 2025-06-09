@@ -131,7 +131,7 @@ function setupCommands() {
     program
       .command('migrate')
       .description('Migrate existing commits to new dates')
-      .argument('<range>', 'Commit range (e.g., HEAD~5..HEAD)')
+      .argument('<range>', 'Commit hash or range (e.g., abc123 or HEAD~5..HEAD)')
       .option('-d, --to-date <date>', 'Target date (YYYY-MM-DD)')
       .option('-s, --spread <days>', 'Spread commits over N days', '1')
       .option('-t, --start-time <time>', 'Start time for first commit', '09:00')

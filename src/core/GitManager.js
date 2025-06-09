@@ -150,11 +150,34 @@ class GitManager {
    */
   async migrateCommits(commitRange, startDate, spreadDays = 1, startTime = '09:00') {
     try {
-      // Get commits in range
-      const commits = await this.git.log({
-        from: commitRange.split('..')[0],
-        to: commitRange.split('..')[1] || 'HEAD'
-      });
+      let commits;
+      
+      // Check if it's a single commit hash or a range
+      if (commitRange.includes('..')) {
+        // Handle range format (e.g., HEAD~5..HEAD)
+        commits = await this.git.log({
+          from: commitRange.split('..')[0],
+          to: commitRange.split('..')[1] || 'HEAD'
+        });
+      } else {
+        // Handle single commit hash
+        try {
+          const singleCommit = await this.git.show([commitRange, '--format=%H|%ad|%an|%ae|%s', '--no-patch']);
+          const [hash, date, authorName, authorEmail, message] = singleCommit.split('|');
+          
+          commits = {
+            all: [{
+              hash: hash,
+              date: date,
+              author_name: authorName,
+              author_email: authorEmail,
+              message: message
+            }]
+          };
+        } catch (error) {
+          throw new Error(`Invalid commit hash: ${commitRange}`);
+        }
+      }
 
       if (commits.all.length === 0) {
         throw new Error('No commits found in the specified range');
