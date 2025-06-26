@@ -152,14 +152,22 @@ alias gch='histofy commit'
 alias gst='histofy status'
 alias gmg='histofy migrate'
 
-# Export functions to make them available in subshells
-export -f hc hcp hp hs hci hh hcb hcy hcw hst
+# Show Histofy help and quick reference
+hhelp() {
+    echo "🎉 Histofy v3 Quick Reference"
+    echo "Available commands:"
+    echo "  hc   - Quick commit with date"
+    echo "  hcp  - Quick commit with push"
+    echo "  hp   - Deploy pattern"
+    echo "  hs   - Show status"
+    echo "  hci  - Interactive commit"
+    echo "  hh   - Show help"
+    echo "  hst  - Show git and histofy status"
+    echo "  hcb  - Batch commit for today"
+    echo "  hcy  - Commit for yesterday"
+    echo "  hcw  - Commit for a week ago"
+    echo "  hhelp - Show this help message"
+}
 
-echo "🎉 Histofy v3 bash functions loaded!"
-echo "Quick reference:"
-echo "  hc  - Quick commit with date"
-echo "  hcp - Quick commit with push"
-echo "  hp  - Deploy pattern"
-echo "  hs  - Show status"
-echo "  hci - Interactive commit"
-echo "  hh  - Show help"
+# Export functions to make them available in subshells
+export -f hc hcp hp hs hci hh hcb hcy hcw hst hhelp
