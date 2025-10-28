@@ -118,14 +118,22 @@ hcw() {
     local message="$1"
     local days_back="${2:-7}"
     local time="${3:-12:00}"
-    local target_date=$(date -d "$days_back days ago" +%Y-%m-%d)
-    
+
+    # Cross-platform date calculation
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS (BSD date)
+        local target_date=$(date -v-${days_back}d +%Y-%m-%d)
+    else
+        # Linux (GNU date)
+        local target_date=$(date -d "$days_back days ago" +%Y-%m-%d)
+    fi
+
     if [ -z "$message" ]; then
         echo "Usage: hcw \"commit message\" [days_back] [\"HH:MM\"]"
         echo "Example: hcw \"Last week's work\" 7 \"10:00\""
         return 1
     fi
-    
+
     histofy commit "$message" --date "$target_date" --time "$time" --add-all
 }
 
