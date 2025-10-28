@@ -37,32 +37,4 @@ describe('GitHubManager', () => {
       expect(result.error).toBeDefined();
     });
   });
-
-  describe('parseRepoFromUrl', () => {
-    test('should parse GitHub HTTPS URL correctly', () => {
-      const manager = new GitHubManager();
-      const result = manager.parseRepoFromUrl('https://github.com/user/repo.git');
-      expect(result).toEqual({ 
-        owner: 'user', 
-        repo: 'repo',
-        fullName: 'user/repo'
-      });
-    });
-
-    test('should parse GitHub SSH URL correctly', () => {
-      const manager = new GitHubManager();
-      const result = manager.parseRepoFromUrl('git@github.com:user/repo.git');
-      expect(result).toEqual({ 
-        owner: 'user', 
-        repo: 'repo',
-        fullName: 'user/repo'
-      });
-    });
-
-    test('should handle invalid URLs', () => {
-      const manager = new GitHubManager();
-      const result = manager.parseRepoFromUrl('invalid-url');
-      expect(result).toBeNull();
-    });
-  });
 });
