@@ -234,8 +234,20 @@ class GitManager {
 
   /**
    * Execute migration by actually changing commit dates
+   *
+   * @deprecated This method uses git filter-branch which is deprecated by Git.
+   * Git recommends using git-filter-repo as a modern alternative for better
+   * performance and safety. The filter-branch command still works but may show
+   * deprecation warnings.
+   *
+   * @see https://github.com/newren/git-filter-repo
+   * @param {Array} migrationPlan - Array of commits to migrate with new dates
+   * @returns {Promise<Object>} Result object with success status and migrated commits
    */
   async executeMigration(migrationPlan) {
+    // Display deprecation warning to user
+    console.warn(chalk.yellow('⚠ Warning: Using deprecated git filter-branch. Consider git-filter-repo for better performance.'));
+
     try {
       const migratedCommits = [];
       
