@@ -94,14 +94,22 @@ hcb() {
 hcy() {
     local message="$1"
     local time="${2:-12:00}"
-    local yesterday=$(date -d "yesterday" +%Y-%m-%d)
-    
+
+    # Cross-platform date calculation
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS (BSD date)
+        local yesterday=$(date -v-1d +%Y-%m-%d)
+    else
+        # Linux (GNU date)
+        local yesterday=$(date -d "yesterday" +%Y-%m-%d)
+    fi
+
     if [ -z "$message" ]; then
         echo "Usage: hcy \"commit message\" [\"HH:MM\"]"
         echo "Example: hcy \"Yesterday's work\" \"15:30\""
         return 1
     fi
-    
+
     histofy commit "$message" --date "$yesterday" --time "$time" --add-all
 }
 
