@@ -14,7 +14,6 @@ const fs = require('fs').promises;
 const yaml = require('yaml');
 const moment = require('moment');
 const GitManager = require('../core/GitManager');
-const GitHubManager = require('../core/GitHubManager');
 const ConfigManager = require('../config/ConfigManager');
 
 const configManager = new ConfigManager();
