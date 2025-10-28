@@ -8,6 +8,7 @@
  */
 
 const ConfigManager = require('../src/config/ConfigManager');
+const { ensureConfigDirSync, setConfigSync, getConfigSync, getAllConfigSync } = require('./helpers/ConfigTestUtils');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
