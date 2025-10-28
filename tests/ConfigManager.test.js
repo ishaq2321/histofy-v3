@@ -31,7 +31,7 @@ describe('ConfigManager', () => {
 
   describe('ensureConfigDir', () => {
     test('should create config directory if it does not exist', () => {
-      configManager.ensureConfigDir();
+      ensureConfigDirSync(configManager);
       expect(fs.existsSync(testConfigDir)).toBe(true);
     });
   });
