@@ -286,46 +286,6 @@ class ConfigManager {
       patternsDir: this.patternsDir
     };
   }
-
-  /**
-   * Synchronous version of directory creation for testing
-   */
-  ensureConfigDir() {
-    const fs = require('fs');
-    if (!fs.existsSync(this.configDir)) {
-      fs.mkdirSync(this.configDir, { recursive: true });
-    }
-    if (!fs.existsSync(this.patternsDir)) {
-      fs.mkdirSync(this.patternsDir, { recursive: true });
-    }
-  }
-
-  /**
-   * Synchronous config storage for testing (in-memory)
-   */
-  _testConfig = {};
-
-  /**
-   * Synchronous set method for testing
-   */
-  setSync(key, value) {
-    this.setNestedValue(this._testConfig, key, value);
-  }
-
-  /**
-   * Synchronous get method for testing
-   */
-  getSync(key, defaultValue = null) {
-    const value = this.getNestedValue(this._testConfig, key);
-    return value !== undefined ? value : defaultValue;
-  }
-
-  /**
-   * Synchronous getAll method for testing
-   */
-  getAllSync() {
-    return { ...this._testConfig };
-  }
 }
 
 module.exports = ConfigManager;
