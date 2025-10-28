@@ -38,24 +38,24 @@ describe('ConfigManager', () => {
 
   describe('config operations', () => {
     beforeEach(() => {
-      configManager.ensureConfigDir();
+      ensureConfigDirSync(configManager);
     });
 
     test('should set and get config values', () => {
-      configManager.setSync('test.key', 'test-value');
-      const value = configManager.getSync('test.key');
+      setConfigSync(configManager, 'test.key', 'test-value');
+      const value = getConfigSync(configManager, 'test.key');
       expect(value).toBe('test-value');
     });
 
     test('should return default value for non-existent keys', () => {
-      const value = configManager.getSync('non.existent.key', 'default');
+      const value = getConfigSync(configManager, 'non.existent.key', 'default');
       expect(value).toBe('default');
     });
 
     test('should return all config', () => {
-      configManager.setSync('test.key1', 'value1');
-      configManager.setSync('test.key2', 'value2');
-      const config = configManager.getAllSync();
+      setConfigSync(configManager, 'test.key1', 'value1');
+      setConfigSync(configManager, 'test.key2', 'value2');
+      const config = getAllConfigSync(configManager);
       expect(config.test.key1).toBe('value1');
       expect(config.test.key2).toBe('value2');
     });
