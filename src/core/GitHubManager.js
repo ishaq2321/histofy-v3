@@ -8,7 +8,6 @@
  */
 
 const axios = require('axios');
-const moment = require('moment');
 
 class GitHubManager {
   constructor(token = null) {
