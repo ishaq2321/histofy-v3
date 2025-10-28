@@ -10,7 +10,6 @@
 const simpleGit = require('simple-git');
 const moment = require('moment');
 const chalk = require('chalk');
-const path = require('path');
 
 class GitManager {
   constructor(repoPath = process.cwd()) {
