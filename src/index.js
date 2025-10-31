@@ -127,6 +127,9 @@ function setupCommands() {
       .option('-t, --start-time <time>', 'Start time for first commit', '09:00')
       .option('--preserve-order', 'Preserve original commit order')
       .option('--execute', 'Execute the migration automatically (default: plan only)')
+      .option('--auto-resolve <strategy>', 'Automatic conflict resolution strategy (theirs|ours)')
+      .option('--no-backup', 'Skip creating backup before migration')
+      .option('--no-rollback', 'Disable automatic rollback on failure')
       .action(async (range, options) => {
         try {
           const migrateCommand = require('./cli/migrate');

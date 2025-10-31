@@ -182,28 +182,67 @@ async function migrateCommand(commitRange, options) {
           }
         });
 
+        // Check for conflict resolution options
+        const migrationOptions = {
+          createBackup: options.backup !== false,
+          rollbackOnFailure: options.rollback !== false
+        };
+
+        // Add auto-resolve strategy if specified
+        if (options.autoResolve) {
+          const validStrategies = ['theirs', 'ours'];
+          if (validStrategies.includes(options.autoResolve)) {
+            migrationOptions.autoResolveStrategy = options.autoResolve;
+            console.log(chalk.blue(`Using automatic conflict resolution: ${options.autoResolve}`));
+          } else {
+            console.log(chalk.yellow(`Warning: Invalid auto-resolve strategy '${options.autoResolve}'. Valid options: ${validStrategies.join(', ')}`));
+          }
+        }
+
+        if (!migrationOptions.createBackup) {
+          console.log(chalk.yellow('⚠️  Backup creation disabled - migration cannot be automatically rolled back'));
+        }
+
+        if (!migrationOptions.rollbackOnFailure) {
+          console.log(chalk.yellow('⚠️  Automatic rollback disabled - manual recovery may be required on failure'));
+        }
+
         let executeResult;
         try {
-          executeResult = await gitManager.executeMigration(result.commits);
+          executeResult = await gitManager.executeMigrationWithConflictResolution(result.commits, migrationOptions);
           
           if (executeResult.success) {
             executionProgress.succeed('Migration completed successfully');
             console.log(chalk.green('Migration completed successfully!'));
-            console.log(chalk.gray(`   ${executeResult.migratedCount}/${executeResult.totalCommits} commit(s) migrated`));
+            
+            // Display migration details
+            if (executeResult.migrationResult) {
+              const migResult = executeResult.migrationResult;
+              if (migResult.migratedCount !== undefined) {
+                console.log(chalk.gray(`   ${migResult.migratedCount}/${migResult.totalCommits} commit(s) migrated`));
+              }
+            }
+            
+            // Show conflict resolution information
+            if (executeResult.conflictsEncountered) {
+              console.log(chalk.yellow('   ⚠️  Conflicts were encountered and resolved during migration'));
+            }
             
             if (executeResult.backupBranch) {
               console.log(chalk.blue(`   Backup created: ${executeResult.backupBranch}`));
             }
             
-            // Validate migration integrity
-            const validation = await gitManager.validateCommitIntegrity(result.commits, executeResult.migrations);
-            if (validation.success) {
-              console.log(chalk.green('   Migration integrity verified'));
-            } else {
-              console.log(chalk.yellow('   Migration completed with integrity warnings:'));
-              validation.issues.forEach(issue => {
-                console.log(chalk.yellow(`     - ${issue}`));
-              });
+            // Validate migration integrity if we have the original commits
+            if (executeResult.migrationResult && executeResult.migrationResult.migrations) {
+              const validation = await gitManager.validateCommitIntegrity(result.commits, executeResult.migrationResult.migrations);
+              if (validation.success) {
+                console.log(chalk.green('   Migration integrity verified'));
+              } else {
+                console.log(chalk.yellow('   Migration completed with integrity warnings:'));
+                validation.issues.forEach(issue => {
+                  console.log(chalk.yellow(`     - ${issue}`));
+                });
+              }
             }
             
             console.log(chalk.blue('\nNext steps:'));
@@ -212,6 +251,33 @@ async function migrateCommand(commitRange, options) {
             console.log(chalk.gray('3. Push changes with: git push --force-with-lease origin <branch>'));
             if (executeResult.backupBranch) {
               console.log(chalk.gray(`4. Delete backup when satisfied: git branch -D ${executeResult.backupBranch}`));
+            }
+          } else if (executeResult.aborted) {
+            executionProgress.info('Migration aborted by user');
+            console.log(chalk.yellow('Migration was aborted during conflict resolution'));
+            
+            if (executeResult.backupBranch) {
+              console.log(chalk.blue(`Backup branch available: ${executeResult.backupBranch}`));
+              console.log(chalk.gray('You can manually restore with: git reset --hard ' + executeResult.backupBranch));
+            }
+          } else if (executeResult.rolledBack) {
+            executionProgress.warn('Migration failed but was rolled back successfully');
+            console.log(chalk.yellow('Migration failed but repository was restored to original state'));
+            console.log(chalk.red(`Error: ${executeResult.error}`));
+            
+            if (executeResult.rollbackResult) {
+              console.log(chalk.green('✅ Rollback completed successfully'));
+            }
+          } else if (executeResult.rollbackFailed) {
+            executionProgress.fail('Migration and rollback both failed');
+            console.log(chalk.red('❌ Migration failed and rollback was unsuccessful'));
+            console.log(chalk.red(`Migration error: ${executeResult.error}`));
+            console.log(chalk.red(`Rollback error: ${executeResult.rollbackError}`));
+            
+            if (executeResult.backupBranch) {
+              console.log(chalk.yellow(`\n⚠️  Manual recovery required!`));
+              console.log(chalk.blue(`Backup branch: ${executeResult.backupBranch}`));
+              console.log(chalk.gray('Manually restore with: git reset --hard ' + executeResult.backupBranch));
             }
           } else {
             executionProgress.fail('Migration execution failed');

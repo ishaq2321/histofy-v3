@@ -11,6 +11,8 @@ const simpleGit = require('simple-git');
 const moment = require('moment');
 const chalk = require('chalk');
 const path = require('path');
+const fs = require('fs').promises;
+const { spawn } = require('child_process');
 
 class GitManager {
   constructor(repoPath = process.cwd()) {
@@ -735,6 +737,591 @@ class GitManager {
       );
     } catch (error) {
       return false;
+    }
+  }
+
+  /**
+   * Detect merge conflicts in the repository
+   * @returns {Object} Conflict detection result
+   */
+  async detectConflicts() {
+    try {
+      const status = await this.git.status();
+      
+      const conflicts = {
+        hasConflicts: false,
+        conflictedFiles: [],
+        unmergedPaths: [],
+        details: []
+      };
+
+      // Check for conflicted files in status
+      if (status.conflicted && status.conflicted.length > 0) {
+        conflicts.hasConflicts = true;
+        conflicts.conflictedFiles = status.conflicted;
+      }
+
+      // Check for unmerged paths
+      if (status.not_added && status.not_added.length > 0) {
+        const unmerged = status.not_added.filter(file => 
+          file.includes('<<<<<<< ') || file.includes('>>>>>>> ')
+        );
+        if (unmerged.length > 0) {
+          conflicts.hasConflicts = true;
+          conflicts.unmergedPaths = unmerged;
+        }
+      }
+
+      // Get detailed conflict information
+      if (conflicts.hasConflicts) {
+        for (const file of conflicts.conflictedFiles) {
+          try {
+            const content = await fs.readFile(file, 'utf8');
+            
+            const conflictMarkers = {
+              incoming: (content.match(/<<<<<<< /g) || []).length,
+              separator: (content.match(/=======/g) || []).length,
+              current: (content.match(/>>>>>>> /g) || []).length
+            };
+
+            conflicts.details.push({
+              file,
+              conflictMarkers,
+              hasValidMarkers: conflictMarkers.incoming === conflictMarkers.separator && 
+                              conflictMarkers.separator === conflictMarkers.current
+            });
+          } catch (error) {
+            conflicts.details.push({
+              file,
+              error: `Could not read file: ${error.message}`
+            });
+          }
+        }
+      }
+
+      return conflicts;
+    } catch (error) {
+      throw new Error(`Failed to detect conflicts: ${error.message}`);
+    }
+  }
+
+  /**
+   * Guide user through conflict resolution
+   * @param {Object} conflicts - Conflict information from detectConflicts()
+   * @returns {Object} Resolution result
+   */
+  async guideConflictResolution(conflicts) {
+    const inquirer = require('inquirer');
+    const chalk = require('chalk');
+
+    if (!conflicts.hasConflicts) {
+      return { success: true, message: 'No conflicts to resolve' };
+    }
+
+    console.log(chalk.red('\n⚠️  Merge conflicts detected during migration!'));
+    console.log(chalk.yellow(`Found conflicts in ${conflicts.conflictedFiles.length} file(s):\n`));
+
+    conflicts.conflictedFiles.forEach((file, index) => {
+      console.log(chalk.red(`   ${index + 1}. ${file}`));
+    });
+
+    console.log(chalk.blue('\nConflict Resolution Options:'));
+    console.log(chalk.gray('1. Manual resolution - Open files in editor and resolve conflicts'));
+    console.log(chalk.gray('2. Automatic resolution - Choose strategy for all conflicts'));
+    console.log(chalk.gray('3. Abort migration - Rollback to original state'));
+
+    const resolutionChoice = await inquirer.prompt([
+      {
+        type: 'list',
+        name: 'strategy',
+        message: 'How would you like to resolve the conflicts?',
+        choices: [
+          { name: 'Manual resolution (recommended)', value: 'manual' },
+          { name: 'Accept incoming changes (theirs)', value: 'theirs' },
+          { name: 'Keep current changes (ours)', value: 'ours' },
+          { name: 'Abort migration', value: 'abort' }
+        ]
+      }
+    ]);
+
+    switch (resolutionChoice.strategy) {
+      case 'manual':
+        return await this.handleManualResolution(conflicts);
+      
+      case 'theirs':
+        return await this.handleAutomaticResolution(conflicts, 'theirs');
+      
+      case 'ours':
+        return await this.handleAutomaticResolution(conflicts, 'ours');
+      
+      case 'abort':
+        return { success: false, aborted: true, message: 'Migration aborted by user' };
+      
+      default:
+        return { success: false, error: 'Invalid resolution strategy' };
+    }
+  }
+
+  /**
+   * Handle manual conflict resolution with user guidance
+   * @param {Object} conflicts - Conflict information
+   * @returns {Object} Resolution result
+   */
+  async handleManualResolution(conflicts) {
+    const inquirer = require('inquirer');
+    const chalk = require('chalk');
+
+    console.log(chalk.blue('\n📝 Manual Conflict Resolution Guide:'));
+    console.log(chalk.gray('1. Open each conflicted file in your preferred editor'));
+    console.log(chalk.gray('2. Look for conflict markers: <<<<<<<, =======, >>>>>>>'));
+    console.log(chalk.gray('3. Edit the file to resolve conflicts'));
+    console.log(chalk.gray('4. Remove all conflict markers'));
+    console.log(chalk.gray('5. Save the file'));
+    console.log(chalk.gray('6. Return here when all conflicts are resolved\n'));
+
+    // Display detailed conflict information
+    conflicts.details.forEach((detail, index) => {
+      console.log(chalk.yellow(`File ${index + 1}: ${detail.file}`));
+      if (detail.conflictMarkers) {
+        console.log(chalk.gray(`   Conflict sections: ${detail.conflictMarkers.incoming}`));
+        console.log(chalk.gray(`   Valid markers: ${detail.hasValidMarkers ? 'Yes' : 'No'}`));
+      }
+      if (detail.error) {
+        console.log(chalk.red(`   Error: ${detail.error}`));
+      }
+      console.log();
+    });
+
+    // Wait for user to resolve conflicts
+    let resolved = false;
+    while (!resolved) {
+      const checkResult = await inquirer.prompt([
+        {
+          type: 'list',
+          name: 'action',
+          message: 'What would you like to do?',
+          choices: [
+            { name: 'Check if conflicts are resolved', value: 'check' },
+            { name: 'Open file in default editor', value: 'edit' },
+            { name: 'Show conflict status', value: 'status' },
+            { name: 'Abort resolution', value: 'abort' }
+          ]
+        }
+      ]);
+
+      switch (checkResult.action) {
+        case 'check':
+          const currentConflicts = await this.detectConflicts();
+          if (!currentConflicts.hasConflicts) {
+            console.log(chalk.green('✅ All conflicts have been resolved!'));
+            resolved = true;
+          } else {
+            console.log(chalk.red(`❌ ${currentConflicts.conflictedFiles.length} file(s) still have conflicts:`));
+            currentConflicts.conflictedFiles.forEach(file => {
+              console.log(chalk.red(`   - ${file}`));
+            });
+          }
+          break;
+
+        case 'edit':
+          const fileChoice = await inquirer.prompt([
+            {
+              type: 'list',
+              name: 'file',
+              message: 'Which file would you like to edit?',
+              choices: conflicts.conflictedFiles
+            }
+          ]);
+          
+          try {
+            const editor = process.env.EDITOR || 'nano';
+            
+            console.log(chalk.blue(`Opening ${fileChoice.file} in ${editor}...`));
+            
+            const editorProcess = spawn(editor, [fileChoice.file], {
+              stdio: 'inherit'
+            });
+            
+            await new Promise((resolve, reject) => {
+              editorProcess.on('close', (code) => {
+                if (code === 0) {
+                  console.log(chalk.green('Editor closed successfully'));
+                  resolve();
+                } else {
+                  console.log(chalk.yellow(`Editor exited with code ${code}`));
+                  resolve();
+                }
+              });
+              
+              editorProcess.on('error', (error) => {
+                console.log(chalk.red(`Failed to open editor: ${error.message}`));
+                resolve();
+              });
+            });
+          } catch (error) {
+            console.log(chalk.red(`Failed to open editor: ${error.message}`));
+          }
+          break;
+
+        case 'status':
+          const statusConflicts = await this.detectConflicts();
+          if (statusConflicts.hasConflicts) {
+            console.log(chalk.yellow(`Remaining conflicts in ${statusConflicts.conflictedFiles.length} file(s):`));
+            statusConflicts.details.forEach((detail, index) => {
+              console.log(chalk.yellow(`   ${index + 1}. ${detail.file}`));
+              if (detail.conflictMarkers) {
+                console.log(chalk.gray(`      Conflict sections: ${detail.conflictMarkers.incoming}`));
+              }
+            });
+          } else {
+            console.log(chalk.green('✅ No conflicts detected'));
+          }
+          break;
+
+        case 'abort':
+          return { success: false, aborted: true, message: 'Manual resolution aborted by user' };
+      }
+    }
+
+    // Add resolved files to staging area
+    try {
+      for (const file of conflicts.conflictedFiles) {
+        await this.git.add(file);
+      }
+      
+      return { 
+        success: true, 
+        message: 'Conflicts resolved manually and files staged',
+        resolvedFiles: conflicts.conflictedFiles
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        error: `Failed to stage resolved files: ${error.message}` 
+      };
+    }
+  }
+
+  /**
+   * Handle automatic conflict resolution using Git strategies
+   * @param {Object} conflicts - Conflict information
+   * @param {string} strategy - Resolution strategy ('theirs' or 'ours')
+   * @returns {Object} Resolution result
+   */
+  async handleAutomaticResolution(conflicts, strategy) {
+    const chalk = require('chalk');
+
+    try {
+      console.log(chalk.blue(`\n🔄 Applying automatic resolution strategy: ${strategy}`));
+
+      const resolvedFiles = [];
+      const failedFiles = [];
+
+      for (const file of conflicts.conflictedFiles) {
+        try {
+          // Use git checkout to resolve conflicts automatically
+          if (strategy === 'theirs') {
+            await this.git.raw(['checkout', '--theirs', file]);
+          } else if (strategy === 'ours') {
+            await this.git.raw(['checkout', '--ours', file]);
+          }
+
+          // Add the resolved file to staging area
+          await this.git.add(file);
+          resolvedFiles.push(file);
+          
+          console.log(chalk.green(`   ✅ Resolved: ${file}`));
+        } catch (error) {
+          failedFiles.push({ file, error: error.message });
+          console.log(chalk.red(`   ❌ Failed: ${file} - ${error.message}`));
+        }
+      }
+
+      if (failedFiles.length === 0) {
+        return {
+          success: true,
+          message: `All conflicts resolved using '${strategy}' strategy`,
+          resolvedFiles,
+          strategy
+        };
+      } else {
+        return {
+          success: false,
+          error: `Failed to resolve ${failedFiles.length} file(s) automatically`,
+          resolvedFiles,
+          failedFiles,
+          strategy
+        };
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: `Automatic resolution failed: ${error.message}`,
+        strategy
+      };
+    }
+  }
+
+  /**
+   * Rollback migration to original state
+   * @param {string} backupBranch - Name of the backup branch to restore from
+   * @param {Object} options - Rollback options
+   * @returns {Object} Rollback result
+   */
+  async rollbackMigration(backupBranch, options = {}) {
+    const chalk = require('chalk');
+    const { 
+      deleteBackup = false, 
+      force = false,
+      preserveWorkingDirectory = false 
+    } = options;
+
+    try {
+      console.log(chalk.yellow(`\n🔄 Rolling back migration to backup: ${backupBranch}`));
+
+      // Check if backup branch exists
+      const branches = await this.git.branch(['-a']);
+      const backupExists = branches.all.some(branch => 
+        branch.name === backupBranch || branch.name === `remotes/origin/${backupBranch}`
+      );
+
+      if (!backupExists) {
+        return {
+          success: false,
+          error: `Backup branch '${backupBranch}' not found`
+        };
+      }
+
+      // Get current branch name
+      const currentBranch = (await this.git.branch()).current;
+
+      // Stash working directory changes if needed
+      let stashCreated = false;
+      if (!preserveWorkingDirectory) {
+        const status = await this.git.status();
+        if (!status.isClean()) {
+          try {
+            await this.git.stash(['push', '-m', 'Histofy migration rollback stash']);
+            stashCreated = true;
+            console.log(chalk.blue('   Working directory changes stashed'));
+          } catch (error) {
+            if (!force) {
+              return {
+                success: false,
+                error: `Cannot stash working directory changes: ${error.message}. Use force option to override.`
+              };
+            }
+          }
+        }
+      }
+
+      // Reset current branch to backup
+      try {
+        if (force) {
+          await this.git.reset(['--hard', backupBranch]);
+        } else {
+          await this.git.reset(['--merge', backupBranch]);
+        }
+        
+        console.log(chalk.green(`   ✅ Branch '${currentBranch}' reset to backup state`));
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to reset branch: ${error.message}`
+        };
+      }
+
+      // Clean up backup branch if requested
+      if (deleteBackup) {
+        try {
+          await this.git.deleteLocalBranch(backupBranch);
+          console.log(chalk.blue(`   🗑️  Backup branch '${backupBranch}' deleted`));
+        } catch (error) {
+          console.log(chalk.yellow(`   ⚠️  Could not delete backup branch: ${error.message}`));
+        }
+      }
+
+      // Restore stashed changes if preserving working directory
+      if (stashCreated && preserveWorkingDirectory) {
+        try {
+          await this.git.stash(['pop']);
+          console.log(chalk.blue('   Working directory changes restored'));
+        } catch (error) {
+          console.log(chalk.yellow(`   ⚠️  Could not restore stashed changes: ${error.message}`));
+        }
+      }
+
+      return {
+        success: true,
+        message: `Migration rolled back successfully to backup '${backupBranch}'`,
+        restoredBranch: currentBranch,
+        backupBranch,
+        stashCreated,
+        backupDeleted: deleteBackup
+      };
+
+    } catch (error) {
+      return {
+        success: false,
+        error: `Rollback failed: ${error.message}`
+      };
+    }
+  }
+
+  /**
+   * Enhanced migration execution with conflict resolution support
+   * @param {Array} migrationPlan - Migration plan from migrateCommits
+   * @param {Object} options - Migration options
+   * @returns {Object} Migration result with conflict handling
+   */
+  async executeMigrationWithConflictResolution(migrationPlan, options = {}) {
+    const chalk = require('chalk');
+    const { 
+      autoResolveStrategy = null, 
+      createBackup = true,
+      rollbackOnFailure = true 
+    } = options;
+
+    try {
+      this.resetCancellation();
+      this.reportProgress('Starting migration with conflict resolution...', 0);
+
+      if (!migrationPlan || migrationPlan.length === 0) {
+        throw new Error('No migration plan provided');
+      }
+
+      // Create backup before starting
+      let backupInfo = null;
+      if (createBackup) {
+        this.reportProgress('Creating backup...', 10);
+        backupInfo = await this.createBackup();
+        if (!backupInfo.success) {
+          throw new Error(`Failed to create backup: ${backupInfo.error}`);
+        }
+        console.log(chalk.blue(`   Backup created: ${backupInfo.backupBranch}`));
+      }
+
+      // Validate repository state
+      const repoValidation = await this.validateRepositoryForMigration();
+      if (!repoValidation.success) {
+        throw new Error(`Repository validation failed: ${repoValidation.issues.join(', ')}`);
+      }
+
+      this.reportProgress('Starting commit migration...', 20);
+
+      // Execute the migration
+      let migrationResult;
+      try {
+        migrationResult = await this.executeMigration(migrationPlan);
+      } catch (error) {
+        // Check if the error is due to conflicts
+        const conflicts = await this.detectConflicts();
+        
+        if (conflicts.hasConflicts) {
+          console.log(chalk.yellow('\n⚠️  Migration paused due to conflicts'));
+          
+          // Handle conflicts based on strategy
+          let resolutionResult;
+          if (autoResolveStrategy) {
+            resolutionResult = await this.handleAutomaticResolution(conflicts, autoResolveStrategy);
+          } else {
+            resolutionResult = await this.guideConflictResolution(conflicts);
+          }
+
+          if (resolutionResult.success) {
+            console.log(chalk.green('✅ Conflicts resolved, continuing migration...'));
+            
+            // Continue the migration after conflict resolution
+            try {
+              await this.git.raw(['rebase', '--continue']);
+              migrationResult = { 
+                success: true, 
+                message: 'Migration completed after conflict resolution',
+                conflictsResolved: true,
+                resolutionStrategy: resolutionResult.strategy || 'manual'
+              };
+            } catch (continueError) {
+              throw new Error(`Failed to continue migration after conflict resolution: ${continueError.message}`);
+            }
+          } else if (resolutionResult.aborted) {
+            // User chose to abort
+            if (rollbackOnFailure && backupInfo) {
+              console.log(chalk.yellow('🔄 Rolling back due to user abort...'));
+              const rollbackResult = await this.rollbackMigration(backupInfo.backupBranch);
+              if (rollbackResult.success) {
+                console.log(chalk.green('✅ Rollback completed successfully'));
+              }
+            }
+            
+            return {
+              success: false,
+              aborted: true,
+              message: 'Migration aborted by user during conflict resolution',
+              backupBranch: backupInfo?.backupBranch
+            };
+          } else {
+            throw new Error(`Conflict resolution failed: ${resolutionResult.error}`);
+          }
+        } else {
+          // Re-throw the original error if it's not conflict-related
+          throw error;
+        }
+      }
+
+      this.reportProgress('Migration completed successfully', 100);
+
+      return {
+        success: true,
+        message: 'Migration completed successfully',
+        migrationResult,
+        backupBranch: backupInfo?.backupBranch,
+        conflictsEncountered: migrationResult?.conflictsResolved || false
+      };
+
+    } catch (error) {
+      // Handle migration failure with rollback
+      if (rollbackOnFailure && backupInfo?.backupBranch) {
+        console.log(chalk.red(`\n❌ Migration failed: ${error.message}`));
+        console.log(chalk.yellow('🔄 Attempting rollback...'));
+        
+        try {
+          const rollbackResult = await this.rollbackMigration(backupInfo.backupBranch);
+          if (rollbackResult.success) {
+            console.log(chalk.green('✅ Rollback completed successfully'));
+            return {
+              success: false,
+              error: error.message,
+              rolledBack: true,
+              backupBranch: backupInfo.backupBranch,
+              rollbackResult
+            };
+          } else {
+            console.log(chalk.red(`❌ Rollback failed: ${rollbackResult.error}`));
+            return {
+              success: false,
+              error: error.message,
+              rollbackFailed: true,
+              rollbackError: rollbackResult.error,
+              backupBranch: backupInfo.backupBranch
+            };
+          }
+        } catch (rollbackError) {
+          console.log(chalk.red(`❌ Rollback error: ${rollbackError.message}`));
+          return {
+            success: false,
+            error: error.message,
+            rollbackFailed: true,
+            rollbackError: rollbackError.message,
+            backupBranch: backupInfo.backupBranch
+          };
+        }
+      }
+
+      return {
+        success: false,
+        error: error.message,
+        backupBranch: backupInfo?.backupBranch
+      };
     }
   }
 
