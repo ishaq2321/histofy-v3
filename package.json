@@ -1,7 +1,7 @@
 {
   "name": "histofy-cli",
   "version": "3.0.0",
-  "description": "Terminal-based GitHub history manipulation tool with custom commit dates",
+  "description": "Pure CLI tool for GitHub history manipulation with custom commit dates",
   "main": "src/index.js",
   "bin": {
     "histofy": "./bin/histofy"

@@ -33,19 +33,7 @@ hcp() {
     histofy commit "$message" --date "$date" --time "$time" --add-all --push
 }
 
-# Quick pattern deployment
-hp() {
-    local pattern="$1"
-    local repo="$2"
-    
-    if [ -z "$pattern" ] || [ -z "$repo" ]; then
-        echo "Usage: hp \"pattern-name\" \"username/repo\""
-        echo "Example: hp \"hello-world\" \"octocat/Hello-World\""
-        return 1
-    fi
-    
-    histofy deploy --pattern "$pattern" --repo "$repo"
-}
+
 
 # Quick status check
 hs() {
@@ -133,18 +121,7 @@ hst() {
 # Auto-completion for histofy commands (if available)
 if command -v histofy >/dev/null 2>&1; then
     # Add completion for histofy command
-    complete -W "commit deploy migrate pattern config status" histofy
-    
-    # Add completion for pattern names
-    _hp_completion() {
-        local cur="${COMP_WORDS[COMP_CWORD]}"
-        if [ "${COMP_CWORD}" -eq 1 ]; then
-            # Complete pattern names
-            local patterns=$(histofy pattern list 2>/dev/null | grep -v "Available patterns" | xargs)
-            COMPREPLY=($(compgen -W "$patterns" -- "$cur"))
-        fi
-    }
-    complete -F _hp_completion hp
+    complete -W "commit migrate config status" histofy
 fi
 
 # Aliases for common git operations with histofy
@@ -158,7 +135,6 @@ hhelp() {
     echo "Available commands:"
     echo "  hc   - Quick commit with date"
     echo "  hcp  - Quick commit with push"
-    echo "  hp   - Deploy pattern"
     echo "  hs   - Show status"
     echo "  hci  - Interactive commit"
     echo "  hh   - Show help"
@@ -170,4 +146,4 @@ hhelp() {
 }
 
 # Export functions to make them available in subshells
-export -f hc hcp hp hs hci hh hcb hcy hcw hst hhelp
+export -f hc hcp hs hci hh hcb hcy hcw hst hhelp

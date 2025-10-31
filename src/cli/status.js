@@ -145,7 +145,6 @@ function displayConfiguration(config) {
   const paths = new ConfigManager().getPaths();
   console.log(chalk.gray('📂 Configuration Paths:'));
   console.log(chalk.gray(`   Config: ${paths.configFile}`));
-  console.log(chalk.gray(`   Patterns: ${paths.patternsDir}`));
   console.log();
 }
 

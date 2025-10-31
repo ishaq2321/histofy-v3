@@ -117,25 +117,6 @@ function setupCommands() {
         }
       });
 
-    // Deploy command
-    program
-      .command('deploy')
-      .description('Deploy contribution patterns')
-      .option('-f, --file <file>', 'Pattern configuration file')
-      .option('-r, --repo <repo>', 'Target repository (username/repo)')
-      .option('-p, --pattern <pattern>', 'Predefined pattern name')
-      .option('--dry-run', 'Show what would be deployed without executing')
-      .option('--force', 'Force deployment even if repository has commits')
-      .action(async (options) => {
-        try {
-          const deployCommand = require('./cli/deploy');
-          await deployCommand(options);
-        } catch (error) {
-          console.error(chalk.red('Error in deploy command:'), error.message);
-          process.exit(1);
-        }
-      });
-
     // Migrate command
     program
       .command('migrate')
@@ -152,62 +133,6 @@ function setupCommands() {
           await migrateCommand(range, options);
         } catch (error) {
           console.error(chalk.red('Error in migrate command:'), error.message);
-          process.exit(1);
-        }
-      });
-
-    // Pattern command
-    program
-      .command('pattern')
-      .description('Manage contribution patterns')
-      .argument('<action>', 'Pattern action (list, create, edit, preview, delete)')
-      .argument('[name]', 'Pattern name')
-      .option('--template <template>', 'Template to use for creation')
-      .option('--year <year>', 'Year for preview')
-      .action(async (action, name, options) => {
-        try {
-          const patternCommand = require('./cli/pattern');
-          
-          // Handle different pattern actions
-          switch (action) {
-            case 'list':
-              await patternCommand.list();
-              break;
-            case 'create':
-              if (!name) {
-                console.error(chalk.red('Error: Pattern name is required for create action'));
-                process.exit(1);
-              }
-              await patternCommand.create(name, options);
-              break;
-            case 'edit':
-              if (!name) {
-                console.error(chalk.red('Error: Pattern name is required for edit action'));
-                process.exit(1);
-              }
-              await patternCommand.edit(name);
-              break;
-            case 'preview':
-              if (!name) {
-                console.error(chalk.red('Error: Pattern name is required for preview action'));
-                process.exit(1);
-              }
-              await patternCommand.preview(name, options);
-              break;
-            case 'delete':
-              if (!name) {
-                console.error(chalk.red('Error: Pattern name is required for delete action'));
-                process.exit(1);
-              }
-              await patternCommand.delete(name);
-              break;
-            default:
-              console.error(chalk.red(`Error: Unknown action "${action}"`));
-              console.log(chalk.gray('Available actions: list, create, edit, preview, delete'));
-              process.exit(1);
-          }
-        } catch (error) {
-          console.error(chalk.red('Error in pattern command:'), error.message);
           process.exit(1);
         }
       });

@@ -188,18 +188,7 @@ const configCommand = {
       // Display file locations
       console.log(chalk.green('📁 File Locations'));
       console.log(`   Config File: ${chalk.yellow(paths.configFile)}`);
-      console.log(`   Patterns Directory: ${chalk.yellow(paths.patternsDir)}`);
       console.log();
-      
-      // Display available patterns
-      const patterns = await configManager.listPatterns();
-      if (patterns.success && patterns.patterns.length > 0) {
-        console.log(chalk.green('🎨 Available Patterns'));
-        patterns.patterns.forEach(pattern => {
-          console.log(`   • ${pattern}`);
-        });
-        console.log();
-      }
       
     } catch (error) {
       console.error(chalk.red(`Error: ${error.message}`));

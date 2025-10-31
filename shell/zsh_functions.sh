@@ -33,19 +33,7 @@ hcp() {
     histofy commit "$message" --date "$date" --time "$time" --add-all --push
 }
 
-# Quick pattern deployment
-hp() {
-    local pattern="$1"
-    local repo="$2"
-    
-    if [ -z "$pattern" ] || [ -z "$repo" ]; then
-        echo "Usage: hp \"pattern-name\" \"username/repo\""
-        echo "Example: hp \"hello-world\" \"octocat/Hello-World\""
-        return 1
-    fi
-    
-    histofy deploy --pattern "$pattern" --repo "$repo"
-}
+
 
 # Quick status check
 hs() {
@@ -158,17 +146,10 @@ if command -v histofy >/dev/null 2>&1; then
         
         # Add completion for histofy command
         _histofy() {
-            local commands=(commit deploy migrate pattern config status)
+            local commands=(commit migrate config status)
             _describe 'commands' commands
         }
         compdef _histofy histofy
-        
-        # Add completion for pattern names
-        _hp() {
-            local patterns=($(histofy pattern list 2>/dev/null | grep -v "Available patterns" | xargs))
-            _describe 'patterns' patterns
-        }
-        compdef _hp hp
     fi
 fi
 
@@ -183,7 +164,6 @@ hhelp() {
     echo "Available commands:"
     echo "  hc   - Quick commit with date"
     echo "  hcp  - Quick commit with push"
-    echo "  hp   - Deploy pattern"
     echo "  hs   - Show status"
     echo "  hci  - Interactive commit"
     echo "  hh   - Show help"

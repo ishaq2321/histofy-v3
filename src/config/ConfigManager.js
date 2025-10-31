@@ -16,7 +16,6 @@ class ConfigManager {
   constructor(customConfigDir = null) {
     this.configDir = customConfigDir || path.join(os.homedir(), '.histofy');
     this.configFile = path.join(this.configDir, 'config.yaml');
-    this.patternsDir = path.join(this.configDir, 'patterns');
     this.defaultConfig = {
       github: {
         token: null,
@@ -32,9 +31,6 @@ class ConfigManager {
         showBanner: true,
         colorOutput: true,
         verboseOutput: false
-      },
-      patterns: {
-        directory: this.patternsDir
       }
     };
   }
@@ -46,7 +42,6 @@ class ConfigManager {
     try {
       // Create config directory if it doesn't exist
       await fs.mkdir(this.configDir, { recursive: true });
-      await fs.mkdir(this.patternsDir, { recursive: true });
 
       // Create default config if it doesn't exist
       const configExists = await this.fileExists(this.configFile);
@@ -139,89 +134,7 @@ class ConfigManager {
     return await this.loadConfig();
   }
 
-  /**
-   * Save a pattern
-   */
-  async savePattern(name, pattern) {
-    try {
-      await fs.mkdir(this.patternsDir, { recursive: true });
-      const patternFile = path.join(this.patternsDir, `${name}.yaml`);
-      const yamlData = yaml.stringify(pattern, { indent: 2 });
-      await fs.writeFile(patternFile, yamlData, 'utf8');
-      return {
-        success: true,
-        name,
-        file: patternFile
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
 
-  /**
-   * Load a pattern
-   */
-  async loadPattern(name) {
-    try {
-      const patternFile = path.join(this.patternsDir, `${name}.yaml`);
-      const patternData = await fs.readFile(patternFile, 'utf8');
-      const pattern = yaml.parse(patternData);
-      return {
-        success: true,
-        name,
-        pattern
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * List all patterns
-   */
-  async listPatterns() {
-    try {
-      const files = await fs.readdir(this.patternsDir);
-      const patterns = files
-        .filter(file => file.endsWith('.yaml') || file.endsWith('.yml'))
-        .map(file => path.basename(file, path.extname(file)));
-      
-      return {
-        success: true,
-        patterns
-      };
-    } catch (error) {
-      return {
-        success: true,
-        patterns: [] // Empty list if directory doesn't exist
-      };
-    }
-  }
-
-  /**
-   * Delete a pattern
-   */
-  async deletePattern(name) {
-    try {
-      const patternFile = path.join(this.patternsDir, `${name}.yaml`);
-      await fs.unlink(patternFile);
-      return {
-        success: true,
-        name
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
 
   /**
    * Helper: Check if file exists
@@ -282,8 +195,7 @@ class ConfigManager {
   getPaths() {
     return {
       configDir: this.configDir,
-      configFile: this.configFile,
-      patternsDir: this.patternsDir
+      configFile: this.configFile
     };
   }
 
@@ -294,9 +206,6 @@ class ConfigManager {
     const fs = require('fs');
     if (!fs.existsSync(this.configDir)) {
       fs.mkdirSync(this.configDir, { recursive: true });
-    }
-    if (!fs.existsSync(this.patternsDir)) {
-      fs.mkdirSync(this.patternsDir, { recursive: true });
     }
   }
 
