@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 /**
  * Histofy v3 - Terminal-based GitHub history manipulation tool
  * Copyright (c) 2025 Ishaq (ishaq2321@proton.me)
@@ -6,8 +8,6 @@
  * Original creation date: 2025-06-09
  * Repository: https://github.com/ishaq2321/histofy-v3
  */
-
-#!/usr/bin/env node
 
 const { Command } = require('commander');
 const chalk = require('chalk');
