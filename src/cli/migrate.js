@@ -155,6 +155,33 @@ async function migrateCommand(commitRange, options) {
         const executionProgress = ProgressUtils.spinner('Executing migration...');
         executionProgress.start();
         
+        // Validate repository state before execution
+        const repoValidation = await gitManager.validateRepositoryForMigration();
+        if (!repoValidation.success) {
+          executionProgress.fail('Repository validation failed');
+          console.log(chalk.red('Repository is not ready for migration:'));
+          repoValidation.issues.forEach(issue => {
+            console.log(chalk.red(`   - ${issue}`));
+          });
+          if (repoValidation.warnings.length > 0) {
+            console.log(chalk.yellow('Warnings:'));
+            repoValidation.warnings.forEach(warning => {
+              console.log(chalk.yellow(`   - ${warning}`));
+            });
+          }
+          console.log(chalk.blue('\nPlease resolve these issues and try again.'));
+          return;
+        }
+
+        // Set up progress callback for execution
+        gitManager.setProgressCallback((message, progress) => {
+          if (progress !== null) {
+            executionProgress.update(progress, message);
+          } else {
+            executionProgress.update(message);
+          }
+        });
+
         let executeResult;
         try {
           executeResult = await gitManager.executeMigration(result.commits);
@@ -162,19 +189,48 @@ async function migrateCommand(commitRange, options) {
           if (executeResult.success) {
             executionProgress.succeed('Migration completed successfully');
             console.log(chalk.green('Migration completed successfully!'));
-            console.log(chalk.gray(`   ${executeResult.migratedCount} commit(s) migrated`));
+            console.log(chalk.gray(`   ${executeResult.migratedCount}/${executeResult.totalCommits} commit(s) migrated`));
+            
+            if (executeResult.backupBranch) {
+              console.log(chalk.blue(`   Backup created: ${executeResult.backupBranch}`));
+            }
+            
+            // Validate migration integrity
+            const validation = await gitManager.validateCommitIntegrity(result.commits, executeResult.migrations);
+            if (validation.success) {
+              console.log(chalk.green('   Migration integrity verified'));
+            } else {
+              console.log(chalk.yellow('   Migration completed with integrity warnings:'));
+              validation.issues.forEach(issue => {
+                console.log(chalk.yellow(`     - ${issue}`));
+              });
+            }
+            
             console.log(chalk.blue('\nNext steps:'));
             console.log(chalk.gray('1. Verify the changes with: git log --oneline -10'));
-            console.log(chalk.gray('2. Push changes with: git push --force-with-lease origin <branch>'));
+            console.log(chalk.gray('2. Check commit dates with: git log --pretty=format:"%h %ad %s" --date=short'));
+            console.log(chalk.gray('3. Push changes with: git push --force-with-lease origin <branch>'));
+            if (executeResult.backupBranch) {
+              console.log(chalk.gray(`4. Delete backup when satisfied: git branch -D ${executeResult.backupBranch}`));
+            }
           } else {
             executionProgress.fail('Migration execution failed');
             const gitError = new GitError(executeResult.error, 'migration execution');
             console.log(ErrorHandler.handleGitError(gitError, 'executing migration'));
+            
+            if (executeResult.suggestion) {
+              console.log(chalk.yellow(`\nSuggestion: ${executeResult.suggestion}`));
+            }
           }
         } catch (error) {
           executionProgress.fail('Migration execution failed');
-          const gitError = new GitError(error.message, 'migration execution', error);
-          console.log(ErrorHandler.handleGitError(gitError, 'executing migration'));
+          
+          if (error.message.includes('cancelled')) {
+            console.log(chalk.yellow('Migration cancelled by user'));
+          } else {
+            const gitError = new GitError(error.message, 'migration execution', error);
+            console.log(ErrorHandler.handleGitError(gitError, 'executing migration'));
+          }
         }
       } else {
         console.log(chalk.blue('\nTo execute this migration:'));
