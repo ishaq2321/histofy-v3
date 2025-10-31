@@ -10,6 +10,13 @@
 const chalk = require('chalk');
 const inquirer = require('inquirer');
 const ConfigManager = require('../config/ConfigManager');
+const { 
+  EnhancedValidationUtils, 
+  ErrorHandler, 
+  ValidationError, 
+  ConfigurationError,
+  ProgressUtils 
+} = require('../utils');
 
 const configManager = new ConfigManager();
 
@@ -22,78 +29,120 @@ const configCommand = {
    * Initialize configuration
    */
   async init() {
-    console.log(chalk.blue('🔧 Initializing Histofy Configuration\n'));
+    console.log(chalk.blue('Initializing Histofy Configuration\n'));
+    
+    const progress = ProgressUtils.spinner('Setting up configuration...');
+    progress.start();
     
     try {
       // Initialize config manager
       const result = await configManager.init();
       
       if (result.success) {
-        console.log(chalk.green('✅ Configuration directory created'));
+        progress.succeed('Configuration directory created');
         console.log(chalk.gray(`   Location: ${result.configDir}\n`));
         
-        // Ask for basic configuration
+        // Ask for basic configuration with enhanced validation
         const responses = await inquirer.prompt([
           {
             type: 'input',
             name: 'githubToken',
             message: 'GitHub Personal Access Token (optional):',
-            validate: input => !input || input.length >= 20 || 'Token seems too short'
+            validate: input => {
+              if (!input.trim()) return true; // Optional field
+              const validation = EnhancedValidationUtils.validateGitHubToken(input);
+              return validation.isValid || validation.error;
+            }
           },
           {
             type: 'input',
             name: 'githubUsername',
-            message: 'GitHub Username (optional):'
+            message: 'GitHub Username (optional):',
+            validate: input => {
+              if (!input.trim()) return true; // Optional field
+              // Basic username validation (GitHub allows alphanumeric, hyphens, max 39 chars)
+              if (input.length > 39) return 'Username too long (max 39 characters)';
+              if (!/^[a-zA-Z0-9-]+$/.test(input)) return 'Username can only contain letters, numbers, and hyphens';
+              return true;
+            }
           },
           {
             type: 'input',
             name: 'defaultAuthor',
-            message: 'Default commit author name (optional):'
+            message: 'Default commit author name (optional):',
+            validate: input => {
+              if (!input.trim()) return true; // Optional field
+              if (input.length < 2) return 'Author name too short (minimum 2 characters)';
+              if (input.length > 100) return 'Author name too long (maximum 100 characters)';
+              return true;
+            }
           },
           {
             type: 'input',
             name: 'defaultEmail',
-            message: 'Default commit author email (optional):'
+            message: 'Default commit author email (optional):',
+            validate: input => {
+              if (!input.trim()) return true; // Optional field
+              const validation = EnhancedValidationUtils.validateEmail(input);
+              return validation.isValid || validation.error;
+            }
           },
           {
             type: 'input',
             name: 'defaultTime',
             message: 'Default commit time (HH:MM):',
             default: '12:00',
-            validate: input => /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/.test(input) || 'Invalid time format'
+            validate: input => {
+              const validation = EnhancedValidationUtils.validateTime(input);
+              return validation.isValid || validation.error;
+            }
           }
         ]);
         
-        // Save configuration
-        const config = await configManager.loadConfig();
+        // Save configuration with validation
+        const saveProgress = ProgressUtils.spinner('Saving configuration...');
+        saveProgress.start();
         
-        if (responses.githubToken) {
-          config.github.token = responses.githubToken;
+        try {
+          const config = await configManager.loadConfig();
+          
+          if (responses.githubToken) {
+            config.github.token = responses.githubToken;
+          }
+          if (responses.githubUsername) {
+            config.github.username = responses.githubUsername;
+          }
+          if (responses.defaultAuthor) {
+            config.git.defaultAuthor = responses.defaultAuthor;
+          }
+          if (responses.defaultEmail) {
+            config.git.defaultEmail = responses.defaultEmail;
+          }
+          if (responses.defaultTime) {
+            config.git.defaultTime = responses.defaultTime;
+          }
+          
+          await configManager.saveConfig(config);
+          saveProgress.succeed('Configuration saved successfully');
+          
+          console.log(chalk.green('\nConfiguration saved successfully!'));
+          console.log(chalk.gray('Run "histofy config list" to view all settings'));
+          
+        } catch (error) {
+          saveProgress.fail('Failed to save configuration');
+          const configError = new ConfigurationError(error.message, null, 'Check file permissions and disk space');
+          console.log(ErrorHandler.handleConfigurationError(configError));
         }
-        if (responses.githubUsername) {
-          config.github.username = responses.githubUsername;
-        }
-        if (responses.defaultAuthor) {
-          config.git.defaultAuthor = responses.defaultAuthor;
-        }
-        if (responses.defaultEmail) {
-          config.git.defaultEmail = responses.defaultEmail;
-        }
-        if (responses.defaultTime) {
-          config.git.defaultTime = responses.defaultTime;
-        }
-        
-        await configManager.saveConfig(config);
-        
-        console.log(chalk.green('\n✅ Configuration saved successfully!'));
-        console.log(chalk.gray('Run "histofy config list" to view all settings'));
         
       } else {
-        console.error(chalk.red(`❌ Failed to initialize: ${result.error}`));
+        progress.fail('Failed to initialize configuration');
+        const configError = new ConfigurationError(result.error, null, 'Check file permissions and ensure the directory is writable');
+        console.log(ErrorHandler.handleConfigurationError(configError));
       }
       
     } catch (error) {
-      console.error(chalk.red(`Error: ${error.message}`));
+      progress.fail('Configuration initialization failed');
+      console.log(ErrorHandler.formatUserFriendlyError(error, { operation: 'configuration initialization' }));
     }
   },
 
@@ -102,26 +151,41 @@ const configCommand = {
    */
   async set(key, value) {
     try {
-      console.log(chalk.blue(`🔧 Setting configuration: ${key} = ${value}\n`));
+      console.log(chalk.blue(`Setting configuration: ${key} = ${value}\n`));
       
-      const result = await configManager.set(key, value);
+      // Validate the configuration key and value
+      const validationResult = this.validateConfigKeyValue(key, value);
+      if (!validationResult.isValid) {
+        console.log(ErrorHandler.handleValidationError(validationResult, 'configuration validation'));
+        return;
+      }
+      
+      const progress = ProgressUtils.spinner('Updating configuration...');
+      progress.start();
+      
+      const result = await configManager.set(key, validationResult.value || value);
       
       if (result.success) {
-        console.log(chalk.green('✅ Configuration updated successfully'));
-        console.log(chalk.gray(`   ${key}: ${value}`));
+        progress.succeed('Configuration updated successfully');
+        console.log(chalk.gray(`   ${key}: ${validationResult.value || value}`));
         
         // Show related information
         if (key === 'github.token') {
-          console.log(chalk.yellow('\n💡 Tip: Test your GitHub connection with:'));
+          console.log(chalk.yellow('\nTip: Test your GitHub connection with:'));
           console.log(chalk.gray('   histofy status --remote'));
         }
         
       } else {
-        console.error(chalk.red(`❌ Failed to set configuration: ${result.error}`));
+        progress.fail('Failed to update configuration');
+        const configError = new ConfigurationError(result.error, key, 'Check the configuration key and value format');
+        console.log(ErrorHandler.handleConfigurationError(configError));
       }
       
     } catch (error) {
-      console.error(chalk.red(`Error: ${error.message}`));
+      console.log(ErrorHandler.formatUserFriendlyError(error, { 
+        operation: 'setting configuration',
+        configKey: key 
+      }));
     }
   },
 
@@ -130,7 +194,22 @@ const configCommand = {
    */
   async get(key) {
     try {
-      const value = await configManager.get(key);
+      // Validate the configuration key
+      if (!key || typeof key !== 'string' || key.trim() === '') {
+        const validationError = new ValidationError(
+          'Configuration key is required',
+          'config_key',
+          'Please provide a valid configuration key (e.g., github.token, git.defaultTime)'
+        );
+        console.log(ErrorHandler.handleValidationError(validationError, 'configuration key validation'));
+        return;
+      }
+      
+      const progress = ProgressUtils.spinner('Retrieving configuration...');
+      progress.start();
+      
+      const value = await configManager.get(key.trim());
+      progress.stop();
       
       if (value !== undefined) {
         console.log(chalk.blue(`Configuration value for '${key}':`));
@@ -144,10 +223,14 @@ const configCommand = {
         }
       } else {
         console.log(chalk.gray(`Configuration key '${key}' not found`));
+        console.log(chalk.gray('Available keys: github.token, github.username, git.defaultAuthor, git.defaultEmail, git.defaultTime'));
       }
       
     } catch (error) {
-      console.error(chalk.red(`Error: ${error.message}`));
+      console.log(ErrorHandler.formatUserFriendlyError(error, { 
+        operation: 'getting configuration',
+        configKey: key 
+      }));
     }
   },
 
@@ -155,11 +238,15 @@ const configCommand = {
    * List all configuration
    */
   async list() {
+    const progress = ProgressUtils.spinner('Loading configuration...');
+    progress.start();
+    
     try {
-      console.log(chalk.blue('🔧 Histofy Configuration\n'));
-      
       const config = await configManager.getAll();
       const paths = configManager.getPaths();
+      progress.succeed('Configuration loaded');
+      
+      console.log(chalk.blue('Histofy Configuration\n'));
       
       // Ensure config has expected structure
       const githubConfig = config?.github || {};
@@ -180,18 +267,19 @@ const configCommand = {
       });
       
       this.displayConfigSection('UI Settings', {
-        'Show Banner': uiConfig.showBanner ? 'Yes' : 'No',
-        'Color Output': uiConfig.colorOutput ? 'Yes' : 'No',
+        'Show Banner': uiConfig.showBanner !== false ? 'Yes' : 'No',
+        'Color Output': uiConfig.colorOutput !== false ? 'Yes' : 'No',
         'Verbose Output': uiConfig.verboseOutput ? 'Yes' : 'No'
       });
       
       // Display file locations
-      console.log(chalk.green('📁 File Locations'));
+      console.log(chalk.green('File Locations'));
       console.log(`   Config File: ${chalk.yellow(paths.configFile)}`);
       console.log();
       
     } catch (error) {
-      console.error(chalk.red(`Error: ${error.message}`));
+      progress.fail('Failed to load configuration');
+      console.log(ErrorHandler.formatUserFriendlyError(error, { operation: 'listing configuration' }));
     }
   },
 
@@ -253,6 +341,127 @@ const configCommand = {
     const middle = '*'.repeat(Math.max(0, value.length - 8));
     
     return chalk.yellow(start + middle + end);
+  },
+
+  /**
+   * Helper: Validate configuration key and value
+   */
+  validateConfigKeyValue(key, value) {
+    if (!key || typeof key !== 'string' || key.trim() === '') {
+      return {
+        isValid: false,
+        error: 'Configuration key is required',
+        suggestion: 'Please provide a valid configuration key (e.g., github.token, git.defaultTime)'
+      };
+    }
+
+    if (value === null || value === undefined) {
+      return {
+        isValid: false,
+        error: 'Configuration value is required',
+        suggestion: 'Please provide a value for the configuration key'
+      };
+    }
+
+    const trimmedKey = key.trim();
+    const trimmedValue = typeof value === 'string' ? value.trim() : value;
+
+    // Validate specific configuration keys
+    switch (trimmedKey) {
+      case 'github.token':
+        const tokenValidation = EnhancedValidationUtils.validateGitHubToken(trimmedValue);
+        if (!tokenValidation.isValid) {
+          return tokenValidation;
+        }
+        return { isValid: true, value: tokenValidation.value };
+
+      case 'github.username':
+        if (typeof trimmedValue !== 'string' || trimmedValue === '') {
+          return {
+            isValid: false,
+            error: 'GitHub username must be a non-empty string',
+            suggestion: 'Please provide a valid GitHub username'
+          };
+        }
+        if (trimmedValue.length > 39) {
+          return {
+            isValid: false,
+            error: 'GitHub username is too long',
+            suggestion: 'GitHub usernames must be 39 characters or less'
+          };
+        }
+        if (!/^[a-zA-Z0-9-]+$/.test(trimmedValue)) {
+          return {
+            isValid: false,
+            error: 'Invalid GitHub username format',
+            suggestion: 'GitHub usernames can only contain letters, numbers, and hyphens'
+          };
+        }
+        return { isValid: true, value: trimmedValue };
+
+      case 'git.defaultAuthor':
+        if (typeof trimmedValue !== 'string' || trimmedValue === '') {
+          return {
+            isValid: false,
+            error: 'Default author must be a non-empty string',
+            suggestion: 'Please provide a valid author name'
+          };
+        }
+        if (trimmedValue.length < 2) {
+          return {
+            isValid: false,
+            error: 'Author name is too short',
+            suggestion: 'Please provide an author name with at least 2 characters'
+          };
+        }
+        return { isValid: true, value: trimmedValue };
+
+      case 'git.defaultEmail':
+        const emailValidation = EnhancedValidationUtils.validateEmail(trimmedValue);
+        if (!emailValidation.isValid) {
+          return emailValidation;
+        }
+        return { isValid: true, value: emailValidation.value };
+
+      case 'git.defaultTime':
+        const timeValidation = EnhancedValidationUtils.validateTime(trimmedValue);
+        if (!timeValidation.isValid) {
+          return timeValidation;
+        }
+        return { isValid: true, value: timeValidation.value };
+
+      case 'ui.showBanner':
+      case 'ui.colorOutput':
+      case 'ui.verboseOutput':
+        if (typeof trimmedValue === 'boolean') {
+          return { isValid: true, value: trimmedValue };
+        }
+        if (typeof trimmedValue === 'string') {
+          const lowerValue = trimmedValue.toLowerCase();
+          if (lowerValue === 'true' || lowerValue === 'yes' || lowerValue === '1') {
+            return { isValid: true, value: true };
+          }
+          if (lowerValue === 'false' || lowerValue === 'no' || lowerValue === '0') {
+            return { isValid: true, value: false };
+          }
+        }
+        return {
+          isValid: false,
+          error: 'Boolean configuration value must be true/false, yes/no, or 1/0',
+          suggestion: 'Please use true, false, yes, no, 1, or 0'
+        };
+
+      default:
+        // For unknown keys, just validate that they're not empty
+        if (typeof trimmedValue === 'string' && trimmedValue === '') {
+          return {
+            isValid: false,
+            error: 'Configuration value cannot be empty',
+            suggestion: 'Please provide a non-empty value'
+          };
+        }
+        return { isValid: true, value: trimmedValue };
+    }
   }
 };
 

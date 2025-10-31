@@ -13,6 +13,14 @@ const Table = require('cli-table3');
 const GitManager = require('../core/GitManager');
 const GitHubManager = require('../core/GitHubManager');
 const ConfigManager = require('../config/ConfigManager');
+const { 
+  EnhancedValidationUtils, 
+  ErrorHandler, 
+  GitError, 
+  NetworkError,
+  ConfigurationError,
+  ProgressUtils 
+} = require('../utils');
 
 const configManager = new ConfigManager();
 
@@ -20,50 +28,101 @@ const configManager = new ConfigManager();
  * Handle status command
  */
 async function statusCommand(options) {
-  const spinner = ora();
+  const progress = ProgressUtils.spinner('Initializing status check...');
   
   try {
-    console.log(chalk.blue('📊 Histofy Status Report\n'));
+    console.log(chalk.blue('Histofy Status Report\n'));
+    progress.start();
 
-    // Check git repository
-    spinner.start('Checking git repository...');
-    const gitManager = new GitManager();
-    const isGitRepo = await gitManager.isGitRepo();
-    spinner.stop();
-
-    if (!isGitRepo) {
-      console.log(chalk.red('❌ Not in a git repository'));
-      console.log(chalk.gray('   Run "git init" to initialize a repository\n'));
+    // Validate Git repository
+    progress.update('Validating Git repository...');
+    const repoValidation = await EnhancedValidationUtils.validateGitRepository();
+    if (!repoValidation.isValid) {
+      progress.fail('Repository validation failed');
+      console.log(ErrorHandler.handleValidationError(repoValidation, 'Git repository check'));
       return;
     }
+    progress.succeed('Git repository validated');
 
-    // Get repository information
-    spinner.start('Getting repository information...');
-    const repoInfo = await gitManager.getRepoInfo();
-    const status = await gitManager.getStatus();
-    spinner.stop();
+    // Initialize Git Manager
+    const gitManager = new GitManager();
+
+    // Get repository information with error handling
+    const repoProgress = ProgressUtils.spinner('Getting repository information...');
+    repoProgress.start();
+    
+    let repoInfo, status;
+    try {
+      repoInfo = await gitManager.getRepoInfo();
+      status = await gitManager.getStatus();
+      repoProgress.succeed('Repository information retrieved');
+    } catch (error) {
+      repoProgress.fail('Failed to get repository information');
+      const gitError = new GitError(error.message, 'repository info retrieval', error);
+      console.log(ErrorHandler.handleGitError(gitError, 'getting repository information'));
+      return;
+    }
 
     // Display repository information
     displayRepositoryInfo(repoInfo, status);
 
-    // Get configuration
-    const config = await configManager.loadConfig();
+    // Get configuration with error handling
+    const configProgress = ProgressUtils.spinner('Loading configuration...');
+    configProgress.start();
+    
+    let config;
+    try {
+      config = await configManager.loadConfig();
+      configProgress.succeed('Configuration loaded');
+    } catch (error) {
+      configProgress.warn('Configuration load failed, using defaults');
+      const configError = new ConfigurationError(error.message, null, 'Run "histofy config init" to initialize configuration');
+      console.log(ErrorHandler.handleConfigurationError(configError));
+      
+      // Use default config to continue
+      config = {
+        github: { token: null, username: null },
+        git: { defaultTime: '12:00' },
+        ui: { showBanner: true, colorOutput: true }
+      };
+    }
+
     displayConfiguration(config);
 
     // Check GitHub integration if requested
-    if (options.remote && config.github.token) {
-      await checkGitHubIntegration(config, repoInfo);
-    } else if (options.remote && !config.github.token) {
-      console.log(chalk.yellow('⚠️  GitHub integration not configured'));
-      console.log(chalk.gray('   Run "histofy config set github.token <your-token>" to enable GitHub features\n'));
+    if (options.remote) {
+      if (config.github && config.github.token) {
+        await checkGitHubIntegration(config, repoInfo);
+      } else {
+        console.log(chalk.yellow('GitHub integration not configured'));
+        console.log(chalk.gray('   Run "histofy config set github.token <your-token>" to enable GitHub features\n'));
+      }
     }
 
-    // Display recent commits
+    // Display recent commits with error handling
     await displayRecentCommits(gitManager);
 
   } catch (error) {
-    spinner.fail('Failed to get status');
-    console.error(chalk.red(`Error: ${error.message}`));
+    progress.fail('Status check failed');
+    
+    // Handle different types of errors appropriately
+    if (error instanceof GitError) {
+      console.log(ErrorHandler.handleGitError(error, 'status operation'));
+    } else if (error instanceof NetworkError) {
+      console.log(ErrorHandler.handleNetworkError(error));
+    } else if (error instanceof ConfigurationError) {
+      console.log(ErrorHandler.handleConfigurationError(error));
+    } else {
+      console.log(ErrorHandler.formatUserFriendlyError(error, { 
+        operation: 'status check',
+        command: 'histofy status'
+      }));
+    }
+    
+    if (options.verbose && error.stack) {
+      console.log(chalk.gray('\nStack trace:'));
+      console.log(chalk.gray(error.stack));
+    }
   }
 }
 
@@ -152,16 +211,50 @@ function displayConfiguration(config) {
  * Check GitHub integration
  */
 async function checkGitHubIntegration(config, repoInfo) {
-  const spinner = ora('Checking GitHub integration...').start();
+  const progress = ProgressUtils.spinner('Checking GitHub integration...');
+  progress.start();
   
   try {
+    // Validate GitHub token first
+    if (!config.github.token) {
+      progress.fail('GitHub token not configured');
+      console.log(chalk.yellow('GitHub integration not configured'));
+      console.log(chalk.gray('   Run "histofy config set github.token <your-token>" to enable GitHub features\n'));
+      return;
+    }
+
+    const tokenValidation = EnhancedValidationUtils.validateGitHubToken(config.github.token);
+    if (!tokenValidation.isValid) {
+      progress.fail('Invalid GitHub token');
+      console.log(ErrorHandler.handleValidationError(tokenValidation, 'GitHub token validation'));
+      return;
+    }
+
     const githubManager = new GitHubManager(config.github.token);
-    const connection = await githubManager.testConnection();
+    
+    // Test connection with retry mechanism
+    let connection;
+    let retryCount = 0;
+    const maxRetries = 3;
+    
+    while (retryCount < maxRetries) {
+      try {
+        connection = await githubManager.testConnection();
+        break;
+      } catch (error) {
+        retryCount++;
+        if (retryCount >= maxRetries) {
+          throw error;
+        }
+        progress.update(`Retrying GitHub connection... (${retryCount}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+      }
+    }
     
     if (connection.success) {
-      spinner.succeed('GitHub integration active');
+      progress.succeed('GitHub integration active');
       
-      console.log(chalk.green('🐙 GitHub Integration'));
+      console.log(chalk.green('GitHub Integration'));
       const githubTable = new Table({
         head: ['Property', 'Value'],
         colWidths: [20, 60],
@@ -179,27 +272,63 @@ async function checkGitHubIntegration(config, repoInfo) {
 
       // Check repository access if we have a GitHub repo
       if (repoInfo.repoName) {
-        const [owner, repo] = repoInfo.repoName.split('/');
-        const repoAccess = await githubManager.validateRepoAccess(owner, repo);
+        const repoProgress = ProgressUtils.spinner(`Checking repository access for ${repoInfo.repoName}...`);
+        repoProgress.start();
         
-        if (repoAccess.success) {
-          console.log(chalk.green(`✅ Repository access confirmed for ${repoInfo.repoName}`));
-          console.log(chalk.gray(`   Can push: ${repoAccess.canPush ? 'Yes' : 'No'}`));
-          console.log(chalk.gray(`   Private: ${repoAccess.isPrivate ? 'Yes' : 'No'}`));
-        } else {
-          console.log(chalk.red(`❌ Repository access failed: ${repoAccess.error}`));
+        try {
+          const [owner, repo] = repoInfo.repoName.split('/');
+          const repoAccess = await githubManager.validateRepoAccess(owner, repo);
+          
+          if (repoAccess.success) {
+            repoProgress.succeed(`Repository access confirmed for ${repoInfo.repoName}`);
+            console.log(chalk.gray(`   Can push: ${repoAccess.canPush ? 'Yes' : 'No'}`));
+            console.log(chalk.gray(`   Private: ${repoAccess.isPrivate ? 'Yes' : 'No'}`));
+          } else {
+            repoProgress.fail(`Repository access failed for ${repoInfo.repoName}`);
+            
+            // Determine error type and provide appropriate handling
+            if (repoAccess.error && repoAccess.error.includes('404')) {
+              const networkError = new NetworkError(repoAccess.error, null, 404, false);
+              console.log(ErrorHandler.handleNetworkError(networkError));
+            } else {
+              console.log(chalk.red(`Repository access error: ${repoAccess.error}`));
+            }
+          }
+        } catch (error) {
+          repoProgress.fail('Repository access check failed');
+          const networkError = new NetworkError(error.message, null, null, true);
+          console.log(ErrorHandler.handleNetworkError(networkError));
         }
       }
       
       console.log();
     } else {
-      spinner.fail('GitHub integration failed');
-      console.log(chalk.red(`❌ GitHub API Error: ${connection.error}`));
-      console.log(chalk.gray('   Check your GitHub token configuration\n'));
+      progress.fail('GitHub integration failed');
+      
+      // Handle different types of connection failures
+      if (connection.error) {
+        if (connection.error.includes('401') || connection.error.includes('Unauthorized')) {
+          const networkError = new NetworkError(connection.error, null, 401, false);
+          console.log(ErrorHandler.handleNetworkError(networkError));
+        } else if (connection.error.includes('403') || connection.error.includes('rate limit')) {
+          const networkError = new NetworkError(connection.error, null, 403, true);
+          console.log(ErrorHandler.handleNetworkError(networkError));
+        } else {
+          console.log(chalk.red(`GitHub API Error: ${connection.error}`));
+          console.log(chalk.gray('   Check your GitHub token configuration\n'));
+        }
+      }
     }
   } catch (error) {
-    spinner.fail('GitHub integration check failed');
-    console.error(chalk.red(`Error: ${error.message}\n`));
+    progress.fail('GitHub integration check failed');
+    
+    // Handle network errors specifically
+    if (error.message.includes('network') || error.message.includes('timeout') || error.message.includes('ENOTFOUND')) {
+      const networkError = new NetworkError(error.message, 'https://api.github.com', null, true);
+      console.log(ErrorHandler.handleNetworkError(networkError));
+    } else {
+      console.log(ErrorHandler.formatUserFriendlyError(error, { operation: 'GitHub integration check' }));
+    }
   }
 }
 
@@ -207,15 +336,20 @@ async function checkGitHubIntegration(config, repoInfo) {
  * Display recent commits
  */
 async function displayRecentCommits(gitManager) {
+  const progress = ProgressUtils.spinner('Loading recent commits...');
+  progress.start();
+  
   try {
     const commits = await gitManager.getCommitHistory({ limit: 5 });
+    progress.succeed('Recent commits loaded');
     
     if (commits.length === 0) {
-      console.log(chalk.yellow('📝 No commits found'));
+      console.log(chalk.yellow('No commits found'));
+      console.log(chalk.gray('   This repository has no commits yet\n'));
       return;
     }
 
-    console.log(chalk.green('📝 Recent Commits (5 most recent)'));
+    console.log(chalk.green('Recent Commits (5 most recent)'));
     
     const commitTable = new Table({
       head: ['Hash', 'Date', 'Author', 'Message'],
@@ -241,8 +375,9 @@ async function displayRecentCommits(gitManager) {
     console.log(commitTable.toString());
     console.log();
   } catch (error) {
-    console.log(chalk.red('❌ Failed to get recent commits'));
-    console.log(chalk.gray(`   Error: ${error.message}\n`));
+    progress.fail('Failed to load recent commits');
+    const gitError = new GitError(error.message, 'commit history retrieval', error);
+    console.log(ErrorHandler.handleGitError(gitError, 'getting recent commits'));
   }
 }
 
