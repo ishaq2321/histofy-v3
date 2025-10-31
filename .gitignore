@@ -3,6 +3,9 @@ node_modules
 .env
 .DS_Store
 
+# Kiro specs directory
+.kiro
+
 # Development files
 debug-*.js
 test-*.js

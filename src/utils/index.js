@@ -366,11 +366,30 @@ class ArrayUtils {
   }
 }
 
+// Import new enhanced utilities
+const EnhancedValidationUtils = require('./validation');
+const { ErrorHandler, HistofyError, ValidationError, GitError, NetworkError, FileSystemError, ConfigurationError } = require('./errors');
+const { ProgressIndicator, MultiStepProgress, ProgressUtils } = require('./progress');
+
 module.exports = {
+  // Existing utilities
   DateUtils,
   StringUtils,
   ValidationUtils,
   FileUtils,
   OutputUtils,
-  ArrayUtils
+  ArrayUtils,
+  
+  // New enhanced utilities
+  EnhancedValidationUtils,
+  ErrorHandler,
+  HistofyError,
+  ValidationError,
+  GitError,
+  NetworkError,
+  FileSystemError,
+  ConfigurationError,
+  ProgressIndicator,
+  MultiStepProgress,
+  ProgressUtils
 };
