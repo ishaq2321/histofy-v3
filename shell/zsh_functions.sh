@@ -94,7 +94,16 @@ hcb() {
 hcy() {
     local message="$1"
     local time="${2:-12:00}"
-    local yesterday=$(date -d "yesterday" +%Y-%m-%d)
+    local yesterday
+    
+    # ZSH-compatible date calculation
+    if command -v gdate >/dev/null 2>&1; then
+        # macOS with GNU date
+        yesterday=$(gdate -d "yesterday" +%Y-%m-%d)
+    else
+        # Linux date or fallback
+        yesterday=$(date -d "yesterday" +%Y-%m-%d 2>/dev/null || date -v-1d +%Y-%m-%d)
+    fi
     
     if [ -z "$message" ]; then
         echo "Usage: hcy \"commit message\" [\"HH:MM\"]"
@@ -110,7 +119,16 @@ hcw() {
     local message="$1"
     local days_back="${2:-7}"
     local time="${3:-12:00}"
-    local target_date=$(date -d "$days_back days ago" +%Y-%m-%d)
+    local target_date
+    
+    # ZSH-compatible date calculation
+    if command -v gdate >/dev/null 2>&1; then
+        # macOS with GNU date
+        target_date=$(gdate -d "$days_back days ago" +%Y-%m-%d)
+    else
+        # Linux date or fallback
+        target_date=$(date -d "$days_back days ago" +%Y-%m-%d 2>/dev/null || date -v-${days_back}d +%Y-%m-%d)
+    fi
     
     if [ -z "$message" ]; then
         echo "Usage: hcw \"commit message\" [days_back] [\"HH:MM\"]"
@@ -130,21 +148,28 @@ hst() {
     histofy status
 }
 
-# Auto-completion for histofy commands (if available)
+# ZSH auto-completion for histofy commands (if available)
 if command -v histofy >/dev/null 2>&1; then
-    # Add completion for histofy command
-    complete -W "commit deploy migrate pattern config status" histofy
-    
-    # Add completion for pattern names
-    _hp_completion() {
-        local cur="${COMP_WORDS[COMP_CWORD]}"
-        if [ "${COMP_CWORD}" -eq 1 ]; then
-            # Complete pattern names
-            local patterns=$(histofy pattern list 2>/dev/null | grep -v "Available patterns" | xargs)
-            COMPREPLY=($(compgen -W "$patterns" -- "$cur"))
-        fi
-    }
-    complete -F _hp_completion hp
+    # ZSH completion setup
+    if [[ -n "$ZSH_VERSION" ]]; then
+        # Enable completion system
+        autoload -U compinit
+        compinit
+        
+        # Add completion for histofy command
+        _histofy() {
+            local commands=(commit deploy migrate pattern config status)
+            _describe 'commands' commands
+        }
+        compdef _histofy histofy
+        
+        # Add completion for pattern names
+        _hp() {
+            local patterns=($(histofy pattern list 2>/dev/null | grep -v "Available patterns" | xargs))
+            _describe 'patterns' patterns
+        }
+        compdef _hp hp
+    fi
 fi
 
 # Aliases for common git operations with histofy
@@ -152,14 +177,22 @@ alias gch='histofy commit'
 alias gst='histofy status'
 alias gmg='histofy migrate'
 
-# Export functions to make them available in subshells
-export -f hc hcp hp hs hci hh hcb hcy hcw hst
+# Show Histofy help and quick reference
+hhelp() {
+    echo "🎉 Histofy v3 Quick Reference"
+    echo "Available commands:"
+    echo "  hc   - Quick commit with date"
+    echo "  hcp  - Quick commit with push"
+    echo "  hp   - Deploy pattern"
+    echo "  hs   - Show status"
+    echo "  hci  - Interactive commit"
+    echo "  hh   - Show help"
+    echo "  hst  - Show git and histofy status"
+    echo "  hcb  - Batch commit for today"
+    echo "  hcy  - Commit for yesterday"
+    echo "  hcw  - Commit for a week ago"
+    echo "  hhelp - Show this help message"
+}
 
-echo "🎉 Histofy v3 bash functions loaded!"
-echo "Quick reference:"
-echo "  hc  - Quick commit with date"
-echo "  hcp - Quick commit with push"
-echo "  hp  - Deploy pattern"
-echo "  hs  - Show status"
-echo "  hci - Interactive commit"
-echo "  hh  - Show help"
+echo "🎉 Histofy v3 ZSH functions loaded!"
+echo "Type 'hhelp' for quick reference"

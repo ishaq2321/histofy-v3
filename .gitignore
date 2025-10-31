@@ -8,6 +8,8 @@ debug-*.js
 test-*.js
 setup-*.js
 add-copyright.sh
+*.backup
+*-simple.js
 
 # Launch materials
 LAUNCH_*.md
