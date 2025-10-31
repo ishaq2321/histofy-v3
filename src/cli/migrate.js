@@ -88,9 +88,18 @@ async function migrateCommand(commitRange, options) {
     console.log(chalk.blue(`Spread over: ${spreadValidation.value} day(s)`));
     console.log(chalk.blue(`Starting time: ${timeValidation.value}\n`));
 
-    // Analyze commits with enhanced error handling
-    const analysisProgress = ProgressUtils.spinner('Analyzing commits...');
+    // Analyze commits with enhanced progress reporting
+    const analysisProgress = ProgressUtils.progressBar('Analyzing commits...', 100);
     analysisProgress.start();
+    
+    // Set up progress callback for GitManager
+    gitManager.setProgressCallback((message, progress) => {
+      if (progress !== null) {
+        analysisProgress.update(progress, message);
+      } else {
+        analysisProgress.update(message);
+      }
+    });
     
     let result;
     try {
@@ -102,9 +111,13 @@ async function migrateCommand(commitRange, options) {
       );
       analysisProgress.succeed('Commit analysis completed');
     } catch (error) {
-      analysisProgress.fail('Commit analysis failed');
-      const gitError = new GitError(error.message, 'commit analysis', error);
-      console.log(ErrorHandler.handleGitError(gitError, 'analyzing commits for migration'));
+      if (error.message.includes('cancelled')) {
+        analysisProgress.cancel('Analysis cancelled by user');
+      } else {
+        analysisProgress.fail('Commit analysis failed');
+        const gitError = new GitError(error.message, 'commit analysis', error);
+        console.log(ErrorHandler.handleGitError(gitError, 'analyzing commits for migration'));
+      }
       return;
     }
 

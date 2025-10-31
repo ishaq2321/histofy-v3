@@ -370,6 +370,7 @@ class ArrayUtils {
 const EnhancedValidationUtils = require('./validation');
 const { ErrorHandler, HistofyError, ValidationError, GitError, NetworkError, FileSystemError, ConfigurationError } = require('./errors');
 const { ProgressIndicator, MultiStepProgress, ProgressUtils } = require('./progress');
+const FeedbackUtils = require('./feedback');
 
 module.exports = {
   // Existing utilities
@@ -391,5 +392,6 @@ module.exports = {
   ConfigurationError,
   ProgressIndicator,
   MultiStepProgress,
-  ProgressUtils
+  ProgressUtils,
+  FeedbackUtils
 };

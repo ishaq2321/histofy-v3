@@ -15,11 +15,54 @@ const path = require('path');
 class GitManager {
   constructor(repoPath = process.cwd()) {
     this.repoPath = repoPath;
+    this.cancelled = false;
+    this.progressCallback = null;
+    
     try {
       this.git = simpleGit(repoPath);
     } catch (error) {
       this.git = null;
       this._initError = error;
+    }
+  }
+
+  /**
+   * Set progress callback for long-running operations
+   * @param {Function} callback - Progress callback function
+   */
+  setProgressCallback(callback) {
+    this.progressCallback = callback;
+  }
+
+  /**
+   * Cancel current operation
+   */
+  cancel() {
+    this.cancelled = true;
+  }
+
+  /**
+   * Check if operation was cancelled
+   */
+  isCancelled() {
+    return this.cancelled;
+  }
+
+  /**
+   * Reset cancellation state
+   */
+  resetCancellation() {
+    this.cancelled = false;
+  }
+
+  /**
+   * Report progress if callback is set
+   * @param {string} message - Progress message
+   * @param {number} progress - Progress percentage (0-100)
+   */
+  reportProgress(message, progress = null) {
+    if (this.progressCallback) {
+      this.progressCallback(message, progress);
     }
   }
 
@@ -155,20 +198,30 @@ class GitManager {
   }
 
   /**
-   * Migrate commits to new dates
+   * Migrate commits to new dates with progress reporting and cancellation support
    */
   async migrateCommits(commitRange, startDate, spreadDays = 1, startTime = '09:00') {
     try {
+      this.resetCancellation();
+      this.reportProgress('Analyzing commit range...', 0);
+      
       let commits;
+      
+      // Check if operation was cancelled
+      if (this.isCancelled()) {
+        throw new Error('Operation cancelled by user');
+      }
       
       // Check if it's a single commit hash or a range
       if (commitRange.includes('..')) {
+        this.reportProgress('Fetching commit range...', 10);
         // Handle range format (e.g., HEAD~5..HEAD)
         commits = await this.git.log({
           from: commitRange.split('..')[0],
           to: commitRange.split('..')[1] || 'HEAD'
         });
       } else {
+        this.reportProgress('Fetching single commit...', 10);
         // Handle single commit hash
         try {
           const singleCommit = await this.git.show([commitRange, '--format=%H|%ad|%an|%ae|%s', '--no-patch']);
@@ -188,9 +241,15 @@ class GitManager {
         }
       }
 
+      if (this.isCancelled()) {
+        throw new Error('Operation cancelled by user');
+      }
+
       if (commits.all.length === 0) {
         throw new Error('No commits found in the specified range');
       }
+
+      this.reportProgress(`Found ${commits.all.length} commit(s) to migrate`, 30);
 
       const results = [];
       const baseDate = moment(startDate, 'YYYY-MM-DD');
@@ -199,19 +258,20 @@ class GitManager {
       const hoursInterval = (spreadDays * 24) / commits.all.length;
       let currentDate = moment(baseDate).hour(parseInt(startTime.split(':')[0])).minute(parseInt(startTime.split(':')[1]));
 
+      this.reportProgress('Generating migration plan...', 50);
+
       for (let i = commits.all.length - 1; i >= 0; i--) {
+        if (this.isCancelled()) {
+          throw new Error('Operation cancelled by user');
+        }
+        
         const commit = commits.all[i];
         const newDate = currentDate.format('YYYY-MM-DD HH:mm:ss');
         
-        // Rebase commit with new date
-        const env = {
-          ...process.env,
-          GIT_AUTHOR_DATE: newDate,
-          GIT_COMMITTER_DATE: newDate
-        };
-
-        // This would require more complex git operations
-        // For now, we'll return the plan
+        // Report progress for each commit processed
+        const progress = 50 + ((commits.all.length - 1 - i) / commits.all.length) * 40;
+        this.reportProgress(`Processing commit ${commits.all.length - i}/${commits.all.length}`, Math.round(progress));
+        
         results.push({
           originalHash: commit.hash,
           originalDate: commit.date,
@@ -223,12 +283,17 @@ class GitManager {
         currentDate.add(hoursInterval, 'hours');
       }
 
+      this.reportProgress('Migration plan completed', 100);
+
       return {
         success: true,
         commits: results,
         warning: 'Migration plan generated. Actual migration requires interactive rebase.'
       };
     } catch (error) {
+      if (error.message.includes('cancelled')) {
+        throw error; // Re-throw cancellation errors as-is
+      }
       throw new Error(`Failed to migrate commits: ${error.message}`);
     }
   }
