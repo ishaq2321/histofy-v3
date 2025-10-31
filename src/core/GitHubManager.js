@@ -160,55 +160,7 @@ class GitHubManager {
     }
   }
 
-  /**
-   * Deploy commits to create a contribution pattern
-   */
-  async deployPattern(repoName, commits, options = {}) {
-    try {
-      const results = [];
-      
-      for (const commit of commits) {
-        const result = await this.createCommitWithDate(
-          repoName,
-          commit.message,
-          commit.date,
-          commit.files || [],
-          options
-        );
-        results.push(result);
-        
-        // Add delay to avoid rate limiting
-        if (options.delay) {
-          await new Promise(resolve => setTimeout(resolve, options.delay));
-        }
-      }
 
-      return {
-        success: true,
-        results,
-        totalCommits: results.length
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  /**
-   * Create a commit with specific date (requires local git operations)
-   */
-  async createCommitWithDate(repoName, message, date, files = [], options = {}) {
-    // This would typically be handled by the GitManager
-    // Here we provide the interface for GitHub API operations
-    return {
-      success: true,
-      message: 'Commit created locally - push to GitHub to deploy',
-      date,
-      files
-    };
-  }
 
   /**
    * Get commit activity for a repository

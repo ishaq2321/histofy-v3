@@ -48,7 +48,7 @@ git checkout -b fix/bug-description
 ### 3. Commit Guidelines
 ```bash
 # Use conventional commit format
-git commit -m "feat: add new pattern system feature"
+git commit -m "feat: add new CLI feature"
 git commit -m "fix: resolve date parsing issue"
 git commit -m "docs: update README installation guide"
 ```
@@ -69,14 +69,14 @@ git commit -m "docs: update README installation guide"
 - Test coverage expansion
 
 ### 🌟 Feature Requests
-- New contribution patterns
+- New CLI features
 - Additional shell integrations
 - Enhanced CLI features
 - Better error handling
 - UI/UX improvements
 
 ### 🎨 Creative Contributions
-- Pattern templates
+- CLI improvements
 - Shell function improvements
 - Better output formatting
 - Developer experience enhancements
@@ -119,7 +119,7 @@ src/
 └── utils/         # Utility functions
 
 tests/             # Test files (mirror src structure)
-templates/         # Pattern templates
+tests/            # Test files
 shell/             # Shell integration scripts
 ```
 

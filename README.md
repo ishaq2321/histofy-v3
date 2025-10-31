@@ -4,6 +4,8 @@
 
 Histofy v3 is a pure CLI tool for GitHub history manipulation. Create commits with custom dates and manage your GitHub activity with ease.
 
+> **Note**: For pattern-based contribution management, check out [Histofy v2](https://github.com/ishaq2321/histofy-v2.git) which includes pattern creation, templates, and deployment features.
+
 ## ✨ Features
 
 - **🎯 Custom Date Commits**: Create commits with any date and time
@@ -243,7 +245,7 @@ histofy-v3/
 │   └── index.js       # Main entry point
 ├── bin/histofy        # Executable script
 ├── shell/             # Shell integration
-├── templates/         # Pattern templates
+├── tests/            # Test files
 └── docs/             # Documentation
 ```
 
