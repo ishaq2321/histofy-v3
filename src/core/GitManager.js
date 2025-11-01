@@ -13,6 +13,7 @@ const chalk = require('chalk');
 const path = require('path');
 const fs = require('fs').promises;
 const { spawn } = require('child_process');
+const GitTransaction = require('./GitTransaction');
 
 class GitManager {
   constructor(repoPath = process.cwd()) {
@@ -290,7 +291,9 @@ class GitManager {
       return {
         success: true,
         commits: results,
-        warning: 'Migration plan generated. Actual migration requires interactive rebase.'
+        executable: true,
+        strategy: this.determineMigrationStrategy(results),
+        message: 'Migration plan generated and ready for execution.'
       };
     } catch (error) {
       if (error.message.includes('cancelled')) {
@@ -301,87 +304,310 @@ class GitManager {
   }
 
   /**
-   * Execute migration by actually changing commit dates using Git rebase operations
+   * Execute migration by actually changing commit dates using Git operations with atomic transactions
    */
   async executeMigration(migrationPlan) {
-    try {
-      this.resetCancellation();
-      this.reportProgress('Preparing migration execution...', 0);
+    this.resetCancellation();
+    this.reportProgress('Preparing migration execution...', 0);
+    
+    if (!migrationPlan || migrationPlan.length === 0) {
+      throw new Error('No migration plan provided');
+    }
+
+    // Use GitTransaction for atomic operations
+    const result = await GitTransaction.execute(this.repoPath, async (transaction) => {
+      this.reportProgress('Transaction started, validating migration plan...', 10);
       
-      if (!migrationPlan || migrationPlan.length === 0) {
-        throw new Error('No migration plan provided');
-      }
-
-      // Validate repository state before migration
-      const status = await this.git.status();
-      if (!status.isClean()) {
-        throw new Error('Repository has uncommitted changes. Please commit or stash changes before migration.');
-      }
-
-      this.reportProgress('Creating backup branch...', 10);
-      
-      // Create backup branch before migration
-      const currentBranch = (await this.git.branch()).current;
-      const backupBranch = `histofy-backup-${Date.now()}`;
-      
-      try {
-        await this.git.checkoutBranch(backupBranch, currentBranch);
-        await this.git.checkout(currentBranch);
-      } catch (error) {
-        throw new Error(`Failed to create backup branch: ${error.message}`);
-      }
-
-      this.reportProgress('Backup created, starting migration...', 20);
-
       // Sort commits by original date to process in correct order (oldest first)
       const sortedCommits = migrationPlan.sort((a, b) => 
         new Date(a.originalDate) - new Date(b.originalDate)
       );
 
-      const migratedCommits = [];
+      // Determine migration strategy based on commit count and complexity
+      const strategy = this.determineMigrationStrategy(sortedCommits);
+      this.reportProgress(`Using ${strategy} strategy for ${sortedCommits.length} commit(s)...`, 20);
+
+      let migratedCommits = [];
       let successCount = 0;
 
-      // Use different strategies based on the number of commits
-      if (sortedCommits.length === 1) {
-        // Single commit - use amend strategy
-        const result = await this.migrateSingleCommit(sortedCommits[0]);
-        if (result.success) {
-          migratedCommits.push(result.commit);
-          successCount++;
-        }
-      } else {
-        // Multiple commits - use interactive rebase strategy
-        const result = await this.migrateMultipleCommits(sortedCommits);
-        migratedCommits.push(...result.migratedCommits);
-        successCount = result.successCount;
+      // Execute migration based on strategy
+      switch (strategy) {
+        case 'filter-branch':
+          const filterResult = await this.executeFilterBranchMigration(sortedCommits);
+          migratedCommits = filterResult.migratedCommits;
+          successCount = filterResult.successCount;
+          break;
+          
+        case 'interactive-rebase':
+          const rebaseResult = await this.executeInteractiveRebaseMigration(sortedCommits);
+          migratedCommits = rebaseResult.migratedCommits;
+          successCount = rebaseResult.successCount;
+          break;
+          
+        case 'cherry-pick':
+          const cherryResult = await this.executeCherryPickMigration(sortedCommits);
+          migratedCommits = cherryResult.migratedCommits;
+          successCount = cherryResult.successCount;
+          break;
+          
+        default:
+          throw new Error(`Unknown migration strategy: ${strategy}`);
       }
 
-      this.reportProgress('Migration completed, cleaning up...', 90);
+      this.reportProgress('Migration completed, validating results...', 90);
 
-      // Clean up any temporary files or refs
-      await this.cleanupMigrationArtifacts();
+      // Validate migration integrity
+      const validation = await this.validateMigrationIntegrity(migrationPlan, migratedCommits);
+      if (!validation.success) {
+        throw new Error(`Migration validation failed: ${validation.issues.join(', ')}`);
+      }
 
-      this.reportProgress('Migration execution completed', 100);
+      this.reportProgress('Migration execution completed successfully', 100);
 
       return {
         success: true,
         migratedCount: successCount,
         totalCommits: sortedCommits.length,
         migrations: migratedCommits,
-        backupBranch: backupBranch,
-        originalBranch: currentBranch
+        strategy: strategy,
+        validation: validation
+      };
+    });
+
+    if (result.success) {
+      return {
+        ...result.result,
+        backupBranch: result.transaction.backupBranch,
+        originalBranch: result.transaction.originalBranch,
+        transactionId: result.transaction.operationId
+      };
+    } else {
+      throw new Error(result.error);
+    }
+  }
+
+  /**
+   * Determine the best migration strategy based on commit characteristics
+   * @param {Array} commits - Array of commits to migrate
+   * @returns {string} Migration strategy ('filter-branch', 'interactive-rebase', 'cherry-pick')
+   */
+  determineMigrationStrategy(commits) {
+    // For large numbers of commits, use filter-branch for efficiency
+    if (commits.length > 20) {
+      return 'filter-branch';
+    }
+    
+    // Check for merge commits which require special handling
+    const hasMergeCommits = commits.some(commit => 
+      commit.parents && commit.parents.length > 1
+    );
+    
+    if (hasMergeCommits) {
+      return 'interactive-rebase';
+    }
+    
+    // For small numbers of linear commits, use cherry-pick for precision
+    if (commits.length <= 5) {
+      return 'cherry-pick';
+    }
+    
+    // Default to interactive rebase for medium-sized operations
+    return 'interactive-rebase';
+  }
+
+  /**
+   * Execute migration using Git filter-branch for bulk operations
+   * @param {Array} commits - Commits to migrate
+   * @returns {Object} Migration result
+   */
+  async executeFilterBranchMigration(commits) {
+    this.reportProgress('Executing filter-branch migration...', 30);
+    
+    try {
+      // Create environment filter script for commit date modification
+      const commitDateMap = {};
+      commits.forEach(commit => {
+        commitDateMap[commit.originalHash] = commit.newDate;
+      });
+
+      // Build the environment filter script
+      let envFilter = 'case $GIT_COMMIT in\n';
+      Object.entries(commitDateMap).forEach(([hash, date]) => {
+        envFilter += `  ${hash})\n`;
+        envFilter += `    export GIT_AUTHOR_DATE="${date}"\n`;
+        envFilter += `    export GIT_COMMITTER_DATE="${date}"\n`;
+        envFilter += `    ;;\n`;
+      });
+      envFilter += 'esac';
+
+      this.reportProgress('Running filter-branch operation...', 50);
+
+      // Execute filter-branch with the environment filter
+      await this.git.raw([
+        'filter-branch',
+        '-f',
+        '--env-filter',
+        envFilter,
+        '--',
+        '--all'
+      ]);
+
+      this.reportProgress('Filter-branch completed, cleaning up...', 80);
+
+      // Clean up filter-branch backup refs
+      await this.cleanupFilterBranchRefs();
+
+      return {
+        migratedCommits: commits.map(commit => ({
+          ...commit,
+          newHash: 'updated-by-filter-branch'
+        })),
+        successCount: commits.length
       };
 
     } catch (error) {
-      if (error.message.includes('cancelled')) {
-        throw error; // Re-throw cancellation errors as-is
+      throw new Error(`Filter-branch migration failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Execute migration using interactive rebase for complex histories
+   * @param {Array} commits - Commits to migrate
+   * @returns {Object} Migration result
+   */
+  async executeInteractiveRebaseMigration(commits) {
+    this.reportProgress('Executing interactive rebase migration...', 30);
+    
+    try {
+      const migratedCommits = [];
+      let successCount = 0;
+
+      // Process commits in chronological order
+      for (let i = 0; i < commits.length; i++) {
+        if (this.isCancelled()) {
+          throw new Error('Operation cancelled by user');
+        }
+
+        const commit = commits[i];
+        const progress = 30 + (i / commits.length) * 50;
+        this.reportProgress(`Processing commit ${i + 1}/${commits.length}: ${commit.originalHash.substring(0, 8)}`, progress);
+
+        try {
+          // Checkout the specific commit
+          await this.git.checkout(commit.originalHash);
+
+          // Set the new date environment variables
+          const env = {
+            ...process.env,
+            GIT_AUTHOR_DATE: commit.newDate,
+            GIT_COMMITTER_DATE: commit.newDate
+          };
+
+          // Amend the commit with new date
+          await this.git.env(env).raw(['commit', '--amend', '--no-edit']);
+
+          // Get the new commit hash
+          const newCommitHash = await this.git.revparse(['HEAD']);
+
+          migratedCommits.push({
+            ...commit,
+            newHash: newCommitHash.trim()
+          });
+          successCount++;
+
+        } catch (error) {
+          console.warn(`Failed to migrate commit ${commit.originalHash}: ${error.message}`);
+        }
       }
-      
+
       return {
-        success: false,
-        error: `Migration execution failed: ${error.message}`,
-        suggestion: 'Check repository state and try again. Use the backup branch if needed.'
+        migratedCommits,
+        successCount
       };
+
+    } catch (error) {
+      throw new Error(`Interactive rebase migration failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Execute migration using cherry-pick for precise control
+   * @param {Array} commits - Commits to migrate
+   * @returns {Object} Migration result
+   */
+  async executeCherryPickMigration(commits) {
+    this.reportProgress('Executing cherry-pick migration...', 30);
+    
+    try {
+      const migratedCommits = [];
+      let successCount = 0;
+
+      // Create a new branch for the migration
+      const migrationBranch = `histofy-migration-${Date.now()}`;
+      const originalBranch = (await this.git.branch()).current;
+
+      // Find the base commit (parent of the first commit to migrate)
+      const firstCommit = commits[0];
+      const parents = await this.git.raw(['rev-list', '--parents', '-n', '1', firstCommit.originalHash]);
+      const parentHash = parents.trim().split(' ')[1];
+
+      if (parentHash) {
+        // Create migration branch from parent commit
+        await this.git.checkoutBranch(migrationBranch, parentHash);
+      } else {
+        // If no parent, create orphan branch
+        await this.git.raw(['checkout', '--orphan', migrationBranch]);
+      }
+
+      // Cherry-pick each commit with new date
+      for (let i = 0; i < commits.length; i++) {
+        if (this.isCancelled()) {
+          throw new Error('Operation cancelled by user');
+        }
+
+        const commit = commits[i];
+        const progress = 30 + (i / commits.length) * 50;
+        this.reportProgress(`Cherry-picking commit ${i + 1}/${commits.length}: ${commit.originalHash.substring(0, 8)}`, progress);
+
+        try {
+          // Set environment variables for new date
+          const env = {
+            ...process.env,
+            GIT_AUTHOR_DATE: commit.newDate,
+            GIT_COMMITTER_DATE: commit.newDate
+          };
+
+          // Cherry-pick the commit
+          await this.git.env(env).raw(['cherry-pick', commit.originalHash]);
+
+          // Get the new commit hash
+          const newCommitHash = await this.git.revparse(['HEAD']);
+
+          migratedCommits.push({
+            ...commit,
+            newHash: newCommitHash.trim()
+          });
+          successCount++;
+
+        } catch (error) {
+          console.warn(`Failed to cherry-pick commit ${commit.originalHash}: ${error.message}`);
+        }
+      }
+
+      // Switch back to original branch and reset to migration branch
+      await this.git.checkout(originalBranch);
+      await this.git.reset(['--hard', migrationBranch]);
+
+      // Clean up migration branch
+      await this.git.deleteLocalBranch(migrationBranch, true);
+
+      return {
+        migratedCommits,
+        successCount
+      };
+
+    } catch (error) {
+      throw new Error(`Cherry-pick migration failed: ${error.message}`);
     }
   }
 
