@@ -1,242 +1,250 @@
-# Conflict Resolution Testing Guide
+# Conflict Resolution Testing Documentation
 
-This document provides step-by-step manual testing instructions for the new conflict resolution functionality in Histofy v3.
+## Overview
 
-## Prerequisites
+This document outlines the comprehensive testing approach for the enhanced conflict resolution implementation in Histofy v3, including security improvements and automated resolution strategies.
 
-1. Ensure you have a Git repository with some commit history
-2. Have Histofy v3 installed and configured
-3. Backup your repository before testing (or use a test repository)
+## Implementation Summary
 
-## Test Scenarios
+### ✅ Completed Features
 
-### Test 1: Basic Conflict Detection
+1. **SecurityUtils Class** (`src/security/SecurityUtils.js`)
+   - Secure editor command validation with whitelist
+   - Path traversal prevention
+   - Git reference sanitization
+   - Command argument sanitization
+   - Input validation for emails and GitHub tokens
 
-**Objective**: Verify that conflict detection works correctly
+2. **Enhanced GitManager** (`src/core/GitManager.js`)
+   - Secure editor spawning with input validation
+   - Enhanced conflict detection with file size limits
+   - Automated conflict resolution strategies (theirs, ours, manual)
+   - Improved error handling and user feedback
 
-**Steps**:
-1. Run the test script:
-   ```bash
-   node test-conflict-resolution.js
-   ```
+3. **Comprehensive Test Suite**
+   - SecurityUtils unit tests (`tests/security/SecurityUtils.test.js`)
+   - GitTransaction tests (`tests/core/GitTransaction.test.js`)
+   - Validation script (`validate-conflict-resolution.js`)
 
-**Expected Result**:
-- All tests should pass
-- Should show "Has conflicts: false" for a clean repository
-- Should show backup creation and cleanup working
+## Security Enhancements
 
-**Verification**:
-- ✅ Test script completes successfully
-- ✅ No errors in conflict detection
-- ✅ Backup creation and cleanup works
+### 1. Secure Editor Spawning
 
-### Test 2: Migration with Backup Creation
+**Before (Vulnerable):**
+```javascript
+const editor = process.env.EDITOR || 'nano';
+const editorProcess = spawn(editor, [fileChoice.file], {
+  stdio: 'inherit'
+});
+```
 
-**Objective**: Test migration with automatic backup creation
+**After (Secure):**
+```javascript
+const rawEditor = process.env.EDITOR || 'nano';
+const sanitizedEditor = SecurityUtils.sanitizeEditorCommand(rawEditor);
+const sanitizedFilePath = SecurityUtils.validateFilePath(fileChoice.file, this.repoPath);
 
-**Steps**:
-1. Create a test commit:
-   ```bash
-   echo "test content" > test-file.txt
-   git add test-file.txt
-   git commit -m "Test commit for migration"
-   ```
+const editorProcess = spawn(sanitizedEditor, [sanitizedFilePath], {
+  stdio: 'inherit',
+  cwd: this.repoPath,
+  shell: false // Prevents command injection
+});
+```
 
-2. Run migration with backup (plan only):
-   ```bash
-   histofy migrate HEAD~1..HEAD --to-date "2023-06-15" --start-time "10:00"
-   ```
+**Security Improvements:**
+- ✅ Editor command whitelist validation
+- ✅ Path traversal prevention
+- ✅ Command injection prevention (shell: false)
+- ✅ Working directory restriction
+- ✅ Comprehensive error handling
 
-3. Execute migration with backup:
-   ```bash
-   histofy migrate HEAD~1..HEAD --to-date "2023-06-15" --start-time "10:00" --execute
-   ```
+### 2. Input Validation
 
-**Expected Result**:
-- Migration plan should be generated successfully
-- Backup branch should be created before execution
-- Migration should complete successfully
-- Backup branch should be available for rollback
+**File Path Validation:**
+- Prevents `../../../etc/passwd` attacks
+- Validates against base repository path
+- Checks for null bytes and dangerous characters
+- File size limits for conflict analysis (10MB max)
 
-**Verification**:
-- ✅ Migration plan displays correctly
-- ✅ Backup branch is created (check with `git branch`)
-- ✅ Migration completes without errors
-- ✅ Commit date is updated correctly (`git log --pretty=format:"%h %ad %s" --date=short`)
+**Git Reference Validation:**
+- Prevents command injection in Git commands
+- Validates Git reference format
+- Handles range syntax safely (e.g., `HEAD~5..HEAD`)
 
-### Test 3: Migration with No Backup Option
+## Testing Scenarios
 
-**Objective**: Test migration without backup creation
+### 1. Security Testing
 
-**Steps**:
-1. Create another test commit:
-   ```bash
-   echo "test content 2" > test-file2.txt
-   git add test-file2.txt
-   git commit -m "Test commit 2 for migration"
-   ```
+#### Test Case 1.1: Editor Command Injection Prevention
+```bash
+# Test malicious EDITOR values
+export EDITOR="nano; rm -rf /"
+export EDITOR="vim | cat /etc/passwd"
+export EDITOR="code && whoami"
+export EDITOR="nano \`whoami\`"
+```
 
-2. Run migration without backup:
-   ```bash
-   histofy migrate HEAD~1..HEAD --to-date "2023-06-16" --no-backup --execute
-   ```
+**Expected Result:** All malicious commands should be rejected with clear error messages.
 
-**Expected Result**:
-- Warning should be displayed about no backup
-- Migration should proceed without creating backup
-- Migration should complete successfully
+#### Test Case 1.2: Path Traversal Prevention
+```bash
+# Test malicious file paths
+../../../etc/passwd
+..\\..\\windows\\system32\\config\\sam
+~/../../etc/shadow
+test/../../../etc/passwd
+```
 
-**Verification**:
-- ✅ Warning message about no backup is displayed
-- ✅ No backup branch is created
-- ✅ Migration completes successfully
+**Expected Result:** All path traversal attempts should be blocked.
 
-### Test 4: Migration with Auto-Resolve Strategy
+#### Test Case 1.3: Git Reference Injection Prevention
+```bash
+# Test malicious Git references
+main; rm -rf /
+HEAD | cat /etc/passwd
+branch && whoami
+ref \`whoami\`
+```
 
-**Objective**: Test automatic conflict resolution strategies
+**Expected Result:** All injection attempts should be sanitized or rejected.
 
-**Steps**:
-1. Create a scenario that might cause conflicts (this is advanced and may require manual setup)
-2. Run migration with auto-resolve:
-   ```bash
-   histofy migrate HEAD~2..HEAD --to-date "2023-06-17" --auto-resolve "theirs" --execute
-   ```
+### 2. Conflict Resolution Testing
 
-**Expected Result**:
-- Auto-resolve strategy should be acknowledged
-- If conflicts occur, they should be resolved automatically
-- Migration should complete or provide clear error messages
+#### Test Case 2.1: Automatic Resolution - "theirs" Strategy
+1. Create merge conflict scenario
+2. Run `histofy migrate --auto-resolve theirs`
+3. Verify conflicts resolved using incoming changes
+4. Verify files properly staged
 
-**Verification**:
-- ✅ Auto-resolve strategy is displayed
-- ✅ Migration handles conflicts appropriately
-- ✅ Clear feedback is provided
+#### Test Case 2.2: Automatic Resolution - "ours" Strategy
+1. Create merge conflict scenario
+2. Run `histofy migrate --auto-resolve ours`
+3. Verify conflicts resolved using current changes
+4. Verify files properly staged
 
-### Test 5: Migration Help and Options
+#### Test Case 2.3: Manual Resolution with Secure Editor
+1. Create merge conflict scenario
+2. Run `histofy migrate` (manual resolution)
+3. Test with various EDITOR values:
+   - `nano` (should work)
+   - `vim` (should work)
+   - `code` (should work)
+   - `malicious-editor` (should be rejected)
+   - `nano; rm -rf /` (should be rejected)
 
-**Objective**: Verify all new command options are available
+#### Test Case 2.4: Enhanced Conflict Detection
+1. Create conflicts in files of various sizes
+2. Test with binary files
+3. Test with very large files (>10MB)
+4. Verify proper conflict marker detection
+5. Verify conflict section analysis
 
-**Steps**:
-1. Check migrate command help:
-   ```bash
-   histofy migrate --help
-   ```
+### 3. Integration Testing
 
-**Expected Result**:
-- All new options should be listed:
-  - `--auto-resolve <strategy>`
-  - `--no-backup`
-  - `--no-rollback`
+#### Test Case 3.1: Full Migration with Conflicts
+1. Create repository with complex history
+2. Introduce merge conflicts during migration
+3. Test automatic resolution
+4. Verify migration integrity
+5. Test rollback functionality
 
-**Verification**:
-- ✅ All new options are displayed in help
-- ✅ Option descriptions are clear and accurate
+#### Test Case 3.2: Error Handling and Recovery
+1. Test with invalid editor commands
+2. Test with inaccessible files
+3. Test with corrupted conflict markers
+4. Verify graceful error handling
+5. Verify helpful error messages
 
-### Test 6: Error Handling and Validation
+### 4. Performance Testing
 
-**Objective**: Test error handling for invalid inputs
+#### Test Case 4.1: Large File Handling
+1. Create conflicts in files of various sizes
+2. Test 1MB, 5MB, 10MB, 15MB files
+3. Verify 10MB limit enforcement
+4. Verify performance with large files
 
-**Steps**:
-1. Test invalid auto-resolve strategy:
-   ```bash
-   histofy migrate HEAD~1..HEAD --to-date "2023-06-18" --auto-resolve "invalid" --execute
-   ```
+#### Test Case 4.2: Many Conflicts
+1. Create repository with 50+ conflicted files
+2. Test automatic resolution performance
+3. Test manual resolution workflow
+4. Verify memory usage
 
-2. Test migration on non-existent range:
-   ```bash
-   histofy migrate nonexistent..HEAD --to-date "2023-06-18" --execute
-   ```
+## Manual Testing Checklist
 
-**Expected Result**:
-- Invalid auto-resolve strategy should show warning
-- Non-existent range should show appropriate error
-- Error messages should be clear and helpful
+### ✅ Security Validation
+- [ ] Test editor command whitelist
+- [ ] Test path traversal prevention
+- [ ] Test command injection prevention
+- [ ] Test Git reference sanitization
+- [ ] Test file size limits
 
-**Verification**:
-- ✅ Invalid strategy shows warning but continues
-- ✅ Invalid range shows clear error message
-- ✅ Error handling is graceful
+### ✅ Functionality Validation
+- [ ] Test automatic conflict resolution (theirs)
+- [ ] Test automatic conflict resolution (ours)
+- [ ] Test manual conflict resolution
+- [ ] Test enhanced conflict detection
+- [ ] Test error handling and recovery
 
-## Manual Conflict Resolution Testing
+### ✅ Integration Validation
+- [ ] Test with GitTransaction integration
+- [ ] Test with migration workflows
+- [ ] Test rollback scenarios
+- [ ] Test cross-platform compatibility
+- [ ] Test with various Git scenarios
 
-**Note**: This requires creating actual merge conflicts, which is more complex. Here's a basic approach:
+## Expected Test Results
 
-### Creating a Conflict Scenario
+### Security Tests
+- All malicious inputs should be rejected with clear error messages
+- No command injection should be possible
+- Path traversal should be prevented
+- File access should be restricted to repository
 
-1. Create a branch and make conflicting changes:
-   ```bash
-   git checkout -b conflict-test
-   echo "version 1" > conflict-file.txt
-   git add conflict-file.txt
-   git commit -m "Version 1"
-   
-   git checkout main
-   echo "version 2" > conflict-file.txt
-   git add conflict-file.txt
-   git commit -m "Version 2"
-   
-   # Try to merge (this should create conflicts)
-   git merge conflict-test
-   ```
+### Functionality Tests
+- Conflicts should be detected accurately
+- Automatic resolution should work correctly
+- Manual resolution should use secure editor spawning
+- Error messages should be helpful and actionable
 
-2. If conflicts are created, test the conflict resolution:
-   ```bash
-   histofy migrate HEAD~1..HEAD --to-date "2023-06-19" --execute
-   ```
+### Integration Tests
+- Migration with conflicts should work end-to-end
+- Rollback should work if conflicts cannot be resolved
+- Performance should be acceptable for typical use cases
 
-3. Follow the interactive prompts for conflict resolution
+## Validation Script Usage
 
-**Expected Result**:
-- Conflicts should be detected
-- Interactive resolution options should be presented
-- Manual resolution should guide user through the process
-- Automatic resolution should work with chosen strategy
+Run the validation script to verify implementation:
 
-## Cleanup After Testing
+```bash
+node validate-conflict-resolution.js
+```
 
-1. Remove test files:
-   ```bash
-   rm -f test-file.txt test-file2.txt conflict-file.txt
-   ```
+Expected output:
+```
+🔍 Starting conflict resolution implementation validation...
 
-2. Remove test branches:
-   ```bash
-   git branch -D conflict-test 2>/dev/null || true
-   ```
+Validating SecurityUtils implementation...
+✅ SecurityUtils implementation validated
+Validating GitManager conflict resolution enhancement...
+✅ GitManager conflict resolution enhancement validated
+Validating test files...
+✅ Test files validated
 
-3. Remove backup branches (if any):
-   ```bash
-   git branch | grep "histofy-backup" | xargs -r git branch -D
-   ```
+🎉 All validations passed!
+✅ SecurityUtils implemented with secure input validation
+✅ GitManager enhanced with secure conflict resolution
+✅ Safe editor spawning implemented
+✅ Automated conflict resolution strategies added
+✅ Comprehensive test files created
+```
 
-4. Remove test script:
-   ```bash
-   rm -f test-conflict-resolution.js
-   ```
+## Conclusion
 
-## Success Criteria
+The conflict resolution implementation has been enhanced with:
 
-All tests pass if:
-- ✅ Conflict detection works without errors
-- ✅ Backup creation and management functions correctly
-- ✅ Migration with new options completes successfully
-- ✅ Error handling provides clear, helpful messages
-- ✅ Help documentation shows all new options
-- ✅ Auto-resolve strategies are recognized and handled
-- ✅ Repository validation works correctly
+1. **Security**: Comprehensive input validation and injection prevention
+2. **Functionality**: Automated resolution strategies and improved detection
+3. **Reliability**: Better error handling and user feedback
+4. **Testing**: Comprehensive test suite and validation scripts
 
-## Troubleshooting
-
-If tests fail:
-1. Check that you're in a valid Git repository
-2. Ensure you have commit history to work with
-3. Verify Histofy is properly installed (`histofy --version`)
-4. Check Git status (`git status`) for any existing issues
-5. Review error messages for specific guidance
-
-## Notes
-
-- The conflict resolution functionality is designed to be safe with automatic backup creation
-- Manual conflict resolution provides step-by-step guidance
-- Automatic rollback helps prevent repository corruption
-- All operations can be undone using the backup branches created
+All requirements for Task 1.3 have been implemented and documented. The implementation follows security best practices and provides robust conflict resolution capabilities.
