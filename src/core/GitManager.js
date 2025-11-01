@@ -14,6 +14,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const { spawn } = require('child_process');
 const GitTransaction = require('./GitTransaction');
+const SecurityUtils = require('../security/SecurityUtils');
 
 class GitManager {
   constructor(repoPath = process.cwd()) {
@@ -967,7 +968,7 @@ class GitManager {
   }
 
   /**
-   * Detect merge conflicts in the repository
+   * Detect merge conflicts in the repository with enhanced security and validation
    * @returns {Object} Conflict detection result
    */
   async detectConflicts() {
@@ -978,7 +979,8 @@ class GitManager {
         hasConflicts: false,
         conflictedFiles: [],
         unmergedPaths: [],
-        details: []
+        details: [],
+        timestamp: new Date().toISOString()
       };
 
       // Check for conflicted files in status
@@ -987,39 +989,95 @@ class GitManager {
         conflicts.conflictedFiles = status.conflicted;
       }
 
-      // Check for unmerged paths
+      // Check for unmerged paths with better validation
       if (status.not_added && status.not_added.length > 0) {
-        const unmerged = status.not_added.filter(file => 
-          file.includes('<<<<<<< ') || file.includes('>>>>>>> ')
-        );
-        if (unmerged.length > 0) {
+        // More robust conflict detection - check actual file content instead of filename
+        const potentialConflicts = [];
+        for (const file of status.not_added) {
+          try {
+            // Validate file path for security
+            const sanitizedPath = SecurityUtils.validateFilePath(file, this.repoPath);
+            const content = await fs.readFile(sanitizedPath, 'utf8');
+            
+            // Check for actual conflict markers in content
+            if (content.includes('<<<<<<<') || content.includes('>>>>>>>') || content.includes('=======')) {
+              potentialConflicts.push(file);
+            }
+          } catch (error) {
+            // File might not exist or be readable, skip it
+            continue;
+          }
+        }
+        
+        if (potentialConflicts.length > 0) {
           conflicts.hasConflicts = true;
-          conflicts.unmergedPaths = unmerged;
+          conflicts.unmergedPaths = potentialConflicts;
         }
       }
 
-      // Get detailed conflict information
+      // Get detailed conflict information with enhanced security
       if (conflicts.hasConflicts) {
-        for (const file of conflicts.conflictedFiles) {
+        const allConflictedFiles = [...new Set([...conflicts.conflictedFiles, ...conflicts.unmergedPaths])];
+        
+        for (const file of allConflictedFiles) {
           try {
-            const content = await fs.readFile(file, 'utf8');
+            // Validate file path for security
+            const sanitizedPath = SecurityUtils.validateFilePath(file, this.repoPath);
             
+            // Check file size to prevent reading extremely large files
+            const stats = await fs.stat(sanitizedPath);
+            if (stats.size > 10 * 1024 * 1024) { // 10MB limit
+              conflicts.details.push({
+                file,
+                error: 'File too large to analyze (>10MB)',
+                size: stats.size
+              });
+              continue;
+            }
+            
+            const content = await fs.readFile(sanitizedPath, 'utf8');
+            
+            // Enhanced conflict marker detection
             const conflictMarkers = {
               incoming: (content.match(/<<<<<<< /g) || []).length,
               separator: (content.match(/=======/g) || []).length,
               current: (content.match(/>>>>>>> /g) || []).length
             };
 
+            // Additional conflict analysis
+            const conflictSections = [];
+            const lines = content.split('\n');
+            let inConflict = false;
+            let conflictStart = -1;
+
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i];
+              if (line.startsWith('<<<<<<<')) {
+                inConflict = true;
+                conflictStart = i;
+              } else if (line.startsWith('>>>>>>>') && inConflict) {
+                inConflict = false;
+                conflictSections.push({
+                  start: conflictStart,
+                  end: i,
+                  lines: i - conflictStart + 1
+                });
+              }
+            }
+
             conflicts.details.push({
               file,
               conflictMarkers,
+              conflictSections,
               hasValidMarkers: conflictMarkers.incoming === conflictMarkers.separator && 
-                              conflictMarkers.separator === conflictMarkers.current
+                              conflictMarkers.separator === conflictMarkers.current,
+              totalConflicts: conflictSections.length,
+              fileSize: stats.size
             });
           } catch (error) {
             conflicts.details.push({
               file,
-              error: `Could not read file: ${error.message}`
+              error: `Could not analyze file: ${error.message}`
             });
           }
         }
@@ -1160,12 +1218,20 @@ class GitManager {
           ]);
           
           try {
-            const editor = process.env.EDITOR || 'nano';
+            // Secure editor command validation
+            const rawEditor = process.env.EDITOR || 'nano';
+            const sanitizedEditor = SecurityUtils.sanitizeEditorCommand(rawEditor);
             
-            console.log(chalk.blue(`Opening ${fileChoice.file} in ${editor}...`));
+            // Validate file path to prevent path traversal
+            const sanitizedFilePath = SecurityUtils.validateFilePath(fileChoice.file, this.repoPath);
             
-            const editorProcess = spawn(editor, [fileChoice.file], {
-              stdio: 'inherit'
+            console.log(chalk.blue(`Opening ${path.basename(sanitizedFilePath)} in ${path.basename(sanitizedEditor)}...`));
+            
+            // Use secure spawn with validated inputs
+            const editorProcess = spawn(sanitizedEditor, [sanitizedFilePath], {
+              stdio: 'inherit',
+              cwd: this.repoPath, // Ensure we're in the correct directory
+              shell: false // Disable shell to prevent command injection
             });
             
             await new Promise((resolve, reject) => {
@@ -1181,11 +1247,19 @@ class GitManager {
               
               editorProcess.on('error', (error) => {
                 console.log(chalk.red(`Failed to open editor: ${error.message}`));
+                if (error.code === 'ENOENT') {
+                  console.log(chalk.gray('Tip: Make sure your EDITOR environment variable points to a valid editor'));
+                  console.log(chalk.gray(`Allowed editors: ${SecurityUtils.ALLOWED_EDITORS.join(', ')}`));
+                }
                 resolve();
               });
             });
           } catch (error) {
             console.log(chalk.red(`Failed to open editor: ${error.message}`));
+            if (error.message.includes('not in the allowed list')) {
+              console.log(chalk.gray(`Allowed editors: ${SecurityUtils.ALLOWED_EDITORS.join(', ')}`));
+              console.log(chalk.gray('You can set EDITOR environment variable to one of the allowed editors'));
+            }
           }
           break;
 
@@ -1229,7 +1303,7 @@ class GitManager {
   }
 
   /**
-   * Handle automatic conflict resolution using Git strategies
+   * Handle automatic conflict resolution using Git strategies with enhanced validation
    * @param {Object} conflicts - Conflict information
    * @param {string} strategy - Resolution strategy ('theirs' or 'ours')
    * @returns {Object} Resolution result
@@ -1238,22 +1312,51 @@ class GitManager {
     const chalk = require('chalk');
 
     try {
+      // Validate strategy parameter
+      const validStrategies = ['theirs', 'ours'];
+      if (!validStrategies.includes(strategy)) {
+        throw new Error(`Invalid resolution strategy: ${strategy}. Valid strategies: ${validStrategies.join(', ')}`);
+      }
+
       console.log(chalk.blue(`\n🔄 Applying automatic resolution strategy: ${strategy}`));
 
       const resolvedFiles = [];
       const failedFiles = [];
+      const skippedFiles = [];
+
+      // Validate conflicts object
+      if (!conflicts || !conflicts.conflictedFiles || !Array.isArray(conflicts.conflictedFiles)) {
+        throw new Error('Invalid conflicts object provided');
+      }
 
       for (const file of conflicts.conflictedFiles) {
         try {
+          // Validate file path for security
+          const sanitizedFilePath = SecurityUtils.validateFilePath(file, this.repoPath);
+          
+          // Check if file still exists and has conflicts
+          const fileStatus = await this.git.status([sanitizedFilePath]);
+          if (!fileStatus.conflicted.includes(file)) {
+            console.log(chalk.yellow(`   ⚠️  Skipped: ${file} - No longer in conflict`));
+            skippedFiles.push(file);
+            continue;
+          }
+
           // Use git checkout to resolve conflicts automatically
           if (strategy === 'theirs') {
-            await this.git.raw(['checkout', '--theirs', file]);
+            await this.git.raw(['checkout', '--theirs', sanitizedFilePath]);
           } else if (strategy === 'ours') {
-            await this.git.raw(['checkout', '--ours', file]);
+            await this.git.raw(['checkout', '--ours', sanitizedFilePath]);
+          }
+
+          // Verify the file is no longer in conflict
+          const postResolutionStatus = await this.git.status([sanitizedFilePath]);
+          if (postResolutionStatus.conflicted.includes(file)) {
+            throw new Error('File still in conflict after resolution attempt');
           }
 
           // Add the resolved file to staging area
-          await this.git.add(file);
+          await this.git.add(sanitizedFilePath);
           resolvedFiles.push(file);
           
           console.log(chalk.green(`   ✅ Resolved: ${file}`));
