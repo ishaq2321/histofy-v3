@@ -21,6 +21,7 @@ const {
   NetworkError,
   ProgressUtils 
 } = require('../utils');
+const DryRunManager = require('../utils/DryRunManager');
 
 const configManager = new ConfigManager();
 
@@ -147,6 +148,38 @@ async function commitCommand(messageArg, options) {
     }
 
     multiProgress.completeStep(0, 'All inputs validated successfully');
+
+    // Handle dry-run mode
+    if (options.dryRun) {
+      multiProgress.completeStep(1, 'Dry-run mode: skipping repository check');
+      multiProgress.completeStep(2, 'Dry-run mode: skipping file staging');
+      multiProgress.completeStep(3, 'Dry-run mode: skipping commit creation');
+      multiProgress.completeStep(4, 'Dry-run mode: skipping remote push');
+      
+      const commitData = {
+        message: messageValidation.value,
+        date: dateValidation.value,
+        time: timeValidation.value,
+        author: options.author,
+        addAll: options.addAll,
+        push: options.push,
+        files: options.addAll ? null : ['staged files']
+      };
+
+      const dryRun = DryRunManager.forCommitOperation(commitData);
+      const summary = dryRun.displayPreview({
+        showDetails: true,
+        showWarnings: true,
+        showGitCommands: true
+      });
+
+      return {
+        success: true,
+        dryRun: true,
+        summary,
+        message: 'Dry-run completed successfully'
+      };
+    }
 
     // Step 2: Repository Check
     multiProgress.startStep(1, 'Checking repository status');

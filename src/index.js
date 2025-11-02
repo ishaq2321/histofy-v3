@@ -52,6 +52,7 @@ function setupCommands() {
       .option('-a, --add-all', 'Add all changes before committing')
       .option('--author <author>', 'Custom author (Name <email>)')
       .option('--push', 'Push after committing')
+      .option('--dry-run', 'Preview what would be done without executing')
       .action(async (message, options) => {
         const result = await OperationManager.execute('commit', async (operationId) => {
           const commitCommand = require('./cli/commit');
@@ -96,7 +97,8 @@ function setupCommands() {
       .argument('[action]', 'Configuration action (init, set, get, list)')
       .argument('[key]', 'Configuration key')
       .argument('[value]', 'Configuration value')
-      .action(async (action, key, value) => {
+      .option('--dry-run', 'Preview configuration changes without applying them')
+      .action(async (action, key, value, options) => {
         const result = await OperationManager.execute('config', async (operationId) => {
           const configCommand = require('./cli/config');
           
@@ -108,7 +110,7 @@ function setupCommands() {
               if (!key) {
                 throw new Error('Key is required for set action');
               }
-              return await configCommand.set(key, value);
+              return await configCommand.set(key, value, options);
             case 'get':
               if (!key) {
                 throw new Error('Key is required for get action');
@@ -120,7 +122,7 @@ function setupCommands() {
           }
         }, {
           command: 'config',
-          args: { action, key, value }
+          args: { action, key, value, options }
         });
 
         if (!result.success) {
@@ -139,7 +141,7 @@ function setupCommands() {
       .option('-t, --template <file>', 'Commit template file')
       .option('--separator <char>', 'CSV separator character', ',')
       .option('--no-headers', 'CSV file has no headers')
-      .option('--dry-run', 'Preview without executing')
+      .option('--dry-run', 'Preview batch operations without executing')
       .option('--continue-on-error', 'Continue processing despite errors')
       .option('--concurrent <num>', 'Max concurrent operations', '1')
       .option('--validate-only', 'Only validate data without execution')
@@ -178,7 +180,7 @@ function setupCommands() {
       .option('--auto-resolve <strategy>', 'Automatic conflict resolution strategy (theirs|ours)')
       .option('--no-backup', 'Skip creating backup before migration')
       .option('--no-rollback', 'Disable automatic rollback on failure')
-      .option('--dry-run', 'Show what would be done without executing')
+      .option('--dry-run', 'Show detailed preview of what would be done without executing')
       .action(async (range, options) => {
         const result = await OperationManager.execute('migrate', async (operationId) => {
           const migrateCommand = require('./cli/migrate');

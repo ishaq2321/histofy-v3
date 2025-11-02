@@ -17,6 +17,7 @@ const {
   GitError,
   ProgressUtils 
 } = require('../utils');
+const DryRunManager = require('../utils/DryRunManager');
 
 /**
  * Handle migrate command
@@ -146,6 +147,35 @@ async function migrateCommand(commitRange, options) {
 
       if (result.warning) {
         console.log(chalk.yellow(`Warning: ${result.warning}`));
+      }
+
+      // Handle dry-run mode
+      if (options.dryRun) {
+        console.log(chalk.cyan('\n🔍 DRY RUN MODE - No changes will be made\n'));
+        
+        const migrationData = {
+          commits: result.commits,
+          strategy: result.strategy || 'interactive-rebase',
+          targetDate: dateValidation.value,
+          spread: spreadValidation.value
+        };
+
+        const dryRun = DryRunManager.forMigrationOperation(migrationData);
+        const summary = dryRun.displayPreview({
+          showDetails: true,
+          showWarnings: true,
+          showGitCommands: false // Git commands are complex for migration
+        });
+
+        console.log(chalk.blue('\n💡 To execute this migration, run the same command with --execute instead of --dry-run'));
+        
+        return {
+          success: true,
+          dryRun: true,
+          summary,
+          commits: result.commits,
+          message: 'Migration dry-run completed successfully'
+        };
       }
 
       // Check if execute flag is provided

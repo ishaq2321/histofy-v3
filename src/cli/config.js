@@ -17,6 +17,7 @@ const {
   ConfigurationError,
   ProgressUtils 
 } = require('../utils');
+const DryRunManager = require('../utils/DryRunManager');
 
 const configManager = new ConfigManager();
 
@@ -149,7 +150,7 @@ const configCommand = {
   /**
    * Set a configuration value
    */
-  async set(key, value) {
+  async set(key, value, options = {}) {
     try {
       console.log(chalk.blue(`Setting configuration: ${key} = ${value}\n`));
       
@@ -158,6 +159,34 @@ const configCommand = {
       if (!validationResult.isValid) {
         console.log(ErrorHandler.handleValidationError(validationResult, 'configuration validation'));
         return;
+      }
+
+      // Handle dry-run mode
+      if (options.dryRun) {
+        console.log(chalk.cyan('\n🔍 DRY RUN MODE - No changes will be made\n'));
+        
+        const configData = {
+          action: 'set',
+          key,
+          value: validationResult.value || value,
+          sensitive: this.isSensitiveKey(key),
+          configFile: configManager.configFile
+        };
+
+        const dryRun = DryRunManager.forConfigOperation(configData);
+        const summary = dryRun.displayPreview({
+          showDetails: true,
+          showWarnings: true
+        });
+
+        console.log(chalk.blue('\n💡 To apply this configuration, run the same command without --dry-run'));
+        
+        return {
+          success: true,
+          dryRun: true,
+          summary,
+          message: 'Configuration dry-run completed successfully'
+        };
       }
       
       const progress = ProgressUtils.spinner('Updating configuration...');
@@ -187,6 +216,17 @@ const configCommand = {
         configKey: key 
       }));
     }
+  },
+
+  /**
+   * Check if a configuration key is sensitive
+   * @private
+   */
+  isSensitiveKey(key) {
+    const sensitiveKeys = ['github.token', 'password', 'secret', 'key', 'token'];
+    return sensitiveKeys.some(sensitiveKey => 
+      key.toLowerCase().includes(sensitiveKey.toLowerCase())
+    );
   },
 
   /**
