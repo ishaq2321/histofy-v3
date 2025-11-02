@@ -13,6 +13,7 @@ const { Command } = require('commander');
 const chalk = require('chalk');
 const figlet = require('figlet');
 const packageJson = require('../package.json');
+const OperationManager = require('./core/OperationManager');
 
 const program = new Command();
 
@@ -52,12 +53,19 @@ function setupCommands() {
       .option('--author <author>', 'Custom author (Name <email>)')
       .option('--push', 'Push after committing')
       .action(async (message, options) => {
-        try {
+        const result = await OperationManager.execute('commit', async (operationId) => {
           const commitCommand = require('./cli/commit');
-          await commitCommand(message, options);
-        } catch (error) {
-          console.error(chalk.red('Error in commit command:'), error.message);
-          process.exit(1);
+          return await commitCommand(message, options);
+        }, {
+          repoPath: process.cwd(),
+          command: 'commit',
+          args: { message, options }
+        });
+
+        if (!result.success) {
+          console.error(chalk.red('Error in commit command:'), result.error);
+          console.error(chalk.gray('The repository has been restored to its previous state.'));
+          return 1; // Return error code instead of process.exit(1)
         }
       });
 
@@ -67,12 +75,17 @@ function setupCommands() {
       .description('Show repository status')
       .option('-r, --remote', 'Include remote information')
       .action(async (options) => {
-        try {
+        const result = await OperationManager.execute('status', async (operationId) => {
           const statusCommand = require('./cli/status');
-          await statusCommand(options);
-        } catch (error) {
-          console.error(chalk.red('Error in status command:'), error.message);
-          process.exit(1);
+          return await statusCommand(options);
+        }, {
+          command: 'status',
+          args: { options }
+        });
+
+        if (!result.success) {
+          console.error(chalk.red('Error in status command:'), result.error);
+          return 1; // Return error code instead of process.exit(1)
         }
       });
 
@@ -84,36 +97,35 @@ function setupCommands() {
       .argument('[key]', 'Configuration key')
       .argument('[value]', 'Configuration value')
       .action(async (action, key, value) => {
-        try {
+        const result = await OperationManager.execute('config', async (operationId) => {
           const configCommand = require('./cli/config');
           
           // Handle different config actions
           switch (action) {
             case 'init':
-              await configCommand.init();
-              break;
+              return await configCommand.init();
             case 'set':
               if (!key) {
-                console.error(chalk.red('Error: Key is required for set action'));
-                process.exit(1);
+                throw new Error('Key is required for set action');
               }
-              await configCommand.set(key, value);
-              break;
+              return await configCommand.set(key, value);
             case 'get':
               if (!key) {
-                console.error(chalk.red('Error: Key is required for get action'));
-                process.exit(1);
+                throw new Error('Key is required for get action');
               }
-              await configCommand.get(key);
-              break;
+              return await configCommand.get(key);
             case 'list':
             default:
-              await configCommand.list();
-              break;
+              return await configCommand.list();
           }
-        } catch (error) {
-          console.error(chalk.red('Error in config command:'), error.message);
-          process.exit(1);
+        }, {
+          command: 'config',
+          args: { action, key, value }
+        });
+
+        if (!result.success) {
+          console.error(chalk.red('Error in config command:'), result.error);
+          return 1; // Return error code instead of process.exit(1)
         }
       });
 
@@ -131,12 +143,19 @@ function setupCommands() {
       .option('--no-backup', 'Skip creating backup before migration')
       .option('--no-rollback', 'Disable automatic rollback on failure')
       .action(async (range, options) => {
-        try {
+        const result = await OperationManager.execute('migrate', async (operationId) => {
           const migrateCommand = require('./cli/migrate');
-          await migrateCommand(range, options);
-        } catch (error) {
-          console.error(chalk.red('Error in migrate command:'), error.message);
-          process.exit(1);
+          return await migrateCommand(range, options);
+        }, {
+          repoPath: process.cwd(),
+          command: 'migrate',
+          args: { range, options }
+        });
+
+        if (!result.success) {
+          console.error(chalk.red('Error in migrate command:'), result.error);
+          console.error(chalk.gray('The repository has been restored to its previous state.'));
+          return 1; // Return error code instead of process.exit(1)
         }
       });
 
@@ -157,7 +176,7 @@ program.configureOutput({
 // Handle unknown commands
 program.on('command:*', () => {
   console.error(chalk.red('Invalid command: %s\nSee --help for a list of available commands.'), program.args.join(' '));
-  process.exit(1);
+  return 1; // Return error code instead of process.exit(1)
 });
 
 // Show banner and help if no arguments provided
@@ -175,5 +194,5 @@ try {
   program.parse(process.argv);
 } catch (err) {
   console.error(chalk.red('Error:'), err.message);
-  process.exit(1);
+  return 1; // Return error code instead of process.exit(1)
 }

@@ -3,62 +3,53 @@
  * Copyright (c) 2025 Ishaq (ishaq2321@proton.me)
  * Licensed under MIT License - https://opensource.org/licenses/MIT
  * 
- * OperationManager - Manages operation state, lifecycle, and cleanup
+ * OperationManager - Manages operation state, transactions, and rollback capabilities
  */
 
-const EventEmitter = require('events');
-const path = require('path');
-const fs = require('fs').promises;
-const os = require('os');
 const crypto = require('crypto');
 const chalk = require('chalk');
+const GitTransaction = require('./GitTransaction');
 
-/**
- * Represents a single operation with its state and metadata
- */
 class Operation {
   constructor(id, type, metadata = {}) {
     this.id = id;
     this.type = type; // 'commit', 'migrate', 'config', 'status'
     this.metadata = metadata;
-    this.status = 'pending'; // 'pending', 'running', 'completed', 'failed', 'cancelled', 'rolled_back'
+    this.status = 'pending'; // 'pending', 'running', 'completed', 'failed', 'cancelled'
     this.startTime = new Date();
     this.endTime = null;
-    this.progress = 0;
     this.result = null;
     this.error = null;
-    this.backupInfo = null;
-    this.cleanupTasks = [];
-    this.context = {};
+    this.transaction = null;
+    this.requiresCleanup = false;
   }
 
   /**
-   * Update operation progress
-   * @param {number} progress - Progress percentage (0-100)
-   * @param {string} message - Progress message
+   * Check if this operation type requires backup
    */
-  updateProgress(progress, message = null) {
-    this.progress = Math.min(Math.max(progress, 0), 100);
-    if (message) {
-      this.context.lastMessage = message;
-      this.context.lastUpdate = new Date();
-    }
+  requiresBackup() {
+    return ['migrate', 'commit'].includes(this.type);
   }
 
   /**
-   * Mark operation as completed
-   * @param {*} result - Operation result
+   * Mark operation as running
+   */
+  markRunning() {
+    this.status = 'running';
+    this.startTime = new Date();
+  }
+
+  /**
+   * Complete the operation successfully
    */
   complete(result) {
     this.status = 'completed';
     this.endTime = new Date();
-    this.progress = 100;
     this.result = result;
   }
 
   /**
    * Mark operation as failed
-   * @param {Error} error - Error that caused failure
    */
   fail(error) {
     this.status = 'failed';
@@ -67,64 +58,22 @@ class Operation {
   }
 
   /**
-   * Mark operation as cancelled
-   * @param {string} reason - Cancellation reason
+   * Cancel the operation
    */
-  cancel(reason = 'User cancelled') {
+  cancel(reason = 'Operation cancelled') {
     this.status = 'cancelled';
     this.endTime = new Date();
-    this.context.cancellationReason = reason;
-  }
-
-  /**
-   * Add cleanup task to be executed when operation ends
-   * @param {Function} cleanupFn - Cleanup function
-   * @param {string} description - Description of cleanup task
-   */
-  addCleanupTask(cleanupFn, description) {
-    this.cleanupTasks.push({
-      fn: cleanupFn,
-      description: description,
-      id: crypto.randomBytes(4).toString('hex')
-    });
-  }
-
-  /**
-   * Execute all cleanup tasks
-   */
-  async executeCleanup() {
-    const results = [];
-    
-    for (const task of this.cleanupTasks) {
-      try {
-        await task.fn();
-        results.push({ id: task.id, success: true, description: task.description });
-      } catch (error) {
-        results.push({ 
-          id: task.id, 
-          success: false, 
-          error: error.message, 
-          description: task.description 
-        });
-      }
-    }
-    
-    return results;
+    this.error = new Error(reason);
   }
 
   /**
    * Get operation duration in milliseconds
    */
   getDuration() {
-    const endTime = this.endTime || new Date();
-    return endTime.getTime() - this.startTime.getTime();
-  }
-
-  /**
-   * Check if operation requires backup
-   */
-  requiresBackup() {
-    return ['commit', 'migrate'].includes(this.type);
+    if (!this.endTime) {
+      return Date.now() - this.startTime.getTime();
+    }
+    return this.endTime.getTime() - this.startTime.getTime();
   }
 
   /**
@@ -135,29 +84,25 @@ class Operation {
       id: this.id,
       type: this.type,
       status: this.status,
-      progress: this.progress,
       duration: this.getDuration(),
       startTime: this.startTime,
       endTime: this.endTime,
       hasError: !!this.error,
-      hasResult: !!this.result,
-      cleanupTaskCount: this.cleanupTasks.length
+      errorMessage: this.error?.message,
+      metadata: this.metadata
     };
   }
 }
 
-/**
- * Manages all operations and their lifecycle
- */
-class OperationManager extends EventEmitter {
+class OperationManager {
   constructor() {
-    super();
     this.operations = new Map();
     this.activeOperations = new Set();
-    this.operationHistory = [];
-    this.maxHistorySize = 100;
+    this.cleanupHandlers = new Set();
     this.shutdownInProgress = false;
-    this.setupSignalHandlers();
+    
+    // Setup graceful shutdown handlers
+    this.setupShutdownHandlers();
   }
 
   /**
@@ -179,49 +124,40 @@ class OperationManager extends EventEmitter {
 
   /**
    * Start a new operation
-   * @param {string} type - Operation type
-   * @param {Object} metadata - Operation metadata
-   * @returns {string} Operation ID
    */
   async startOperation(type, metadata = {}) {
+    if (this.shutdownInProgress) {
+      throw new Error('Cannot start new operations during shutdown');
+    }
+
     const operationId = this.generateOperationId();
     const operation = new Operation(operationId, type, metadata);
     
     this.operations.set(operationId, operation);
     this.activeOperations.add(operationId);
     
-    // Set operation as running
-    operation.status = 'running';
-    
-    // Emit operation started event
-    this.emit('operationStarted', operation);
-    
-    // Add to history
-    this.addToHistory(operation);
-    
+    operation.markRunning();
+
+    // Create transaction if operation requires backup
+    if (operation.requiresBackup() && metadata.repoPath) {
+      try {
+        operation.transaction = new GitTransaction(metadata.repoPath, operationId);
+        await operation.transaction.createBackup();
+        operation.requiresCleanup = true;
+      } catch (error) {
+        operation.fail(error);
+        this.activeOperations.delete(operationId);
+        throw new Error(`Failed to create backup for operation: ${error.message}`);
+      }
+    }
+
     return operationId;
   }
 
   /**
-   * Update operation progress
-   * @param {string} operationId - Operation ID
-   * @param {number} progress - Progress percentage
-   * @param {string} message - Progress message
+   * Complete an operation successfully
    */
-  updateProgress(operationId, progress, message = null) {
-    const operation = this.operations.get(operationId);
-    if (operation) {
-      operation.updateProgress(progress, message);
-      this.emit('operationProgress', operation);
-    }
-  }
-
-  /**
-   * Complete an operation
-   * @param {string} operationId - Operation ID
-   * @param {*} result - Operation result
-   */
-  async completeOperation(operationId, result) {
+  async completeOperation(operationId, result = null) {
     const operation = this.operations.get(operationId);
     if (!operation) {
       throw new Error(`Operation ${operationId} not found`);
@@ -229,20 +165,21 @@ class OperationManager extends EventEmitter {
 
     operation.complete(result);
     this.activeOperations.delete(operationId);
-    
-    // Execute cleanup tasks
-    const cleanupResults = await operation.executeCleanup();
-    operation.context.cleanupResults = cleanupResults;
-    
-    this.emit('operationCompleted', operation);
-    
-    return operation;
+
+    // Commit transaction if exists
+    if (operation.transaction) {
+      try {
+        await operation.transaction.commit();
+      } catch (error) {
+        console.warn(chalk.yellow(`Warning: Failed to commit transaction: ${error.message}`));
+      }
+    }
+
+    return operation.getSummary();
   }
 
   /**
    * Fail an operation
-   * @param {string} operationId - Operation ID
-   * @param {Error} error - Error that caused failure
    */
   async failOperation(operationId, error) {
     const operation = this.operations.get(operationId);
@@ -252,22 +189,24 @@ class OperationManager extends EventEmitter {
 
     operation.fail(error);
     this.activeOperations.delete(operationId);
-    
-    // Execute cleanup tasks
-    const cleanupResults = await operation.executeCleanup();
-    operation.context.cleanupResults = cleanupResults;
-    
-    this.emit('operationFailed', operation);
-    
-    return operation;
+
+    // Rollback transaction if exists
+    if (operation.transaction) {
+      try {
+        await operation.transaction.rollback();
+        console.log(chalk.blue('Repository state restored from backup'));
+      } catch (rollbackError) {
+        console.error(chalk.red(`Failed to rollback transaction: ${rollbackError.message}`));
+      }
+    }
+
+    return operation.getSummary();
   }
 
   /**
    * Cancel an operation
-   * @param {string} operationId - Operation ID
-   * @param {string} reason - Cancellation reason
    */
-  async cancelOperation(operationId, reason = 'User cancelled') {
+  async cancelOperation(operationId, reason = 'Operation cancelled') {
     const operation = this.operations.get(operationId);
     if (!operation) {
       throw new Error(`Operation ${operationId} not found`);
@@ -275,220 +214,203 @@ class OperationManager extends EventEmitter {
 
     operation.cancel(reason);
     this.activeOperations.delete(operationId);
-    
-    // Execute cleanup tasks
-    const cleanupResults = await operation.executeCleanup();
-    operation.context.cleanupResults = cleanupResults;
-    
-    this.emit('operationCancelled', operation);
-    
-    return operation;
+
+    // Rollback transaction if exists
+    if (operation.transaction) {
+      try {
+        await operation.transaction.rollback();
+        console.log(chalk.blue('Repository state restored from backup'));
+      } catch (rollbackError) {
+        console.error(chalk.red(`Failed to rollback transaction: ${rollbackError.message}`));
+      }
+    }
+
+    return operation.getSummary();
   }
 
   /**
-   * Get operation by ID
-   * @param {string} operationId - Operation ID
-   * @returns {Operation} Operation instance
+   * Get operation status
    */
-  getOperation(operationId) {
-    return this.operations.get(operationId);
+  getOperationStatus(operationId) {
+    const operation = this.operations.get(operationId);
+    if (!operation) {
+      return null;
+    }
+    return operation.getSummary();
   }
 
   /**
    * Get all active operations
-   * @returns {Array} Array of active operations
    */
   getActiveOperations() {
-    return Array.from(this.activeOperations).map(id => this.operations.get(id));
+    return Array.from(this.activeOperations).map(id => {
+      const operation = this.operations.get(id);
+      return operation ? operation.getSummary() : null;
+    }).filter(Boolean);
   }
 
   /**
    * Get operation history
-   * @param {number} limit - Maximum number of operations to return
-   * @returns {Array} Array of operation summaries
    */
   getOperationHistory(limit = 10) {
-    return this.operationHistory
-      .slice(-limit)
-      .map(op => op.getSummary());
+    const allOperations = Array.from(this.operations.values())
+      .sort((a, b) => b.startTime.getTime() - a.startTime.getTime())
+      .slice(0, limit);
+    
+    return allOperations.map(op => op.getSummary());
   }
 
   /**
-   * Add operation to history
-   * @param {Operation} operation - Operation to add
+   * Cleanup completed operations (keep last 50)
    */
-  addToHistory(operation) {
-    this.operationHistory.push(operation);
+  cleanupOldOperations() {
+    const allOperations = Array.from(this.operations.entries())
+      .sort(([, a], [, b]) => b.startTime.getTime() - a.startTime.getTime());
     
-    // Limit history size
-    if (this.operationHistory.length > this.maxHistorySize) {
-      this.operationHistory = this.operationHistory.slice(-this.maxHistorySize);
+    // Keep only the last 50 operations
+    const toDelete = allOperations.slice(50);
+    
+    for (const [id, operation] of toDelete) {
+      // Only delete completed/failed/cancelled operations
+      if (!this.activeOperations.has(id)) {
+        this.operations.delete(id);
+      }
     }
   }
 
   /**
    * Cancel all active operations
-   * @param {string} reason - Cancellation reason
    */
-  async cancelAllOperations(reason = 'System shutdown') {
-    const activeOps = this.getActiveOperations();
+  async cancelAllOperations(reason = 'Shutdown requested') {
+    const activeOps = Array.from(this.activeOperations);
     const results = [];
-    
-    for (const operation of activeOps) {
+
+    for (const operationId of activeOps) {
       try {
-        const result = await this.cancelOperation(operation.id, reason);
-        results.push({ operationId: operation.id, success: true, result });
+        const result = await this.cancelOperation(operationId, reason);
+        results.push(result);
       } catch (error) {
-        results.push({ operationId: operation.id, success: false, error: error.message });
+        console.error(chalk.red(`Failed to cancel operation ${operationId}: ${error.message}`));
       }
     }
-    
+
     return results;
   }
 
   /**
-   * Cleanup all operations and resources
+   * Cleanup all resources
    */
   async cleanupAll() {
     if (this.shutdownInProgress) {
       return;
     }
-    
+
     this.shutdownInProgress = true;
+    console.log(chalk.yellow('\nCleaning up operations...'));
+
+    // Cancel all active operations
+    const cancelledOps = await this.cancelAllOperations('Application shutdown');
     
-    try {
-      // Cancel all active operations
-      await this.cancelAllOperations('System cleanup');
-      
-      // Clear all data
-      this.operations.clear();
-      this.activeOperations.clear();
-      
-      this.emit('cleanupCompleted');
-    } catch (error) {
-      this.emit('cleanupError', error);
+    if (cancelledOps.length > 0) {
+      console.log(chalk.blue(`Cancelled ${cancelledOps.length} active operation(s)`));
+    }
+
+    // Run cleanup handlers
+    for (const handler of this.cleanupHandlers) {
+      try {
+        await handler();
+      } catch (error) {
+        console.error(chalk.red(`Cleanup handler failed: ${error.message}`));
+      }
+    }
+
+    // Cleanup old operations
+    this.cleanupOldOperations();
+
+    console.log(chalk.green('Cleanup completed'));
+  }
+
+  /**
+   * Add cleanup handler
+   */
+  addCleanupHandler(handler) {
+    if (typeof handler === 'function') {
+      this.cleanupHandlers.add(handler);
     }
   }
 
   /**
-   * Setup signal handlers for graceful shutdown
+   * Remove cleanup handler
    */
-  setupSignalHandlers() {
-    const handleShutdown = async (signal) => {
+  removeCleanupHandler(handler) {
+    this.cleanupHandlers.delete(handler);
+  }
+
+  /**
+   * Setup graceful shutdown handlers
+   */
+  setupShutdownHandlers() {
+    const shutdownHandler = async (signal) => {
       console.log(chalk.yellow(`\nReceived ${signal}, shutting down gracefully...`));
       
       try {
         await this.cleanupAll();
-        console.log(chalk.green('Cleanup completed successfully'));
         process.exit(0);
       } catch (error) {
-        console.error(chalk.red('Cleanup failed:'), error.message);
+        console.error(chalk.red(`Shutdown error: ${error.message}`));
         process.exit(1);
       }
     };
 
-    process.on('SIGINT', handleShutdown);
-    process.on('SIGTERM', handleShutdown);
-    
+    // Handle various shutdown signals
+    process.on('SIGINT', () => shutdownHandler('SIGINT'));
+    process.on('SIGTERM', () => shutdownHandler('SIGTERM'));
+    process.on('SIGQUIT', () => shutdownHandler('SIGQUIT'));
+
     // Handle uncaught exceptions
     process.on('uncaughtException', async (error) => {
-      console.error(chalk.red('Uncaught exception:'), error);
+      console.error(chalk.red('Uncaught Exception:'), error);
       await this.cleanupAll();
       process.exit(1);
     });
-    
+
     // Handle unhandled promise rejections
     process.on('unhandledRejection', async (reason, promise) => {
-      console.error(chalk.red('Unhandled promise rejection:'), reason);
+      console.error(chalk.red('Unhandled Rejection at:'), promise, 'reason:', reason);
       await this.cleanupAll();
       process.exit(1);
     });
   }
 
   /**
-   * Get system status
+   * Execute operation with automatic management
    */
-  getStatus() {
-    return {
-      activeOperations: this.activeOperations.size,
-      totalOperations: this.operations.size,
-      historySize: this.operationHistory.length,
-      shutdownInProgress: this.shutdownInProgress,
-      uptime: process.uptime(),
-      memoryUsage: process.memoryUsage()
-    };
-  }
+  static async execute(type, operation, metadata = {}) {
+    const manager = OperationManager.getInstance();
+    let operationId = null;
 
-  /**
-   * Save operation state to disk (for recovery)
-   * @param {string} operationId - Operation ID
-   */
-  async saveOperationState(operationId) {
-    const operation = this.operations.get(operationId);
-    if (!operation) {
-      throw new Error(`Operation ${operationId} not found`);
-    }
-
-    const stateDir = path.join(os.tmpdir(), 'histofy-operations');
-    await fs.mkdir(stateDir, { recursive: true });
-    
-    const statePath = path.join(stateDir, `${operationId}.json`);
-    const state = {
-      id: operation.id,
-      type: operation.type,
-      metadata: operation.metadata,
-      status: operation.status,
-      startTime: operation.startTime,
-      progress: operation.progress,
-      context: operation.context
-    };
-    
-    await fs.writeFile(statePath, JSON.stringify(state, null, 2));
-    return statePath;
-  }
-
-  /**
-   * Load operation state from disk
-   * @param {string} operationId - Operation ID
-   */
-  async loadOperationState(operationId) {
-    const stateDir = path.join(os.tmpdir(), 'histofy-operations');
-    const statePath = path.join(stateDir, `${operationId}.json`);
-    
     try {
-      const stateData = await fs.readFile(statePath, 'utf8');
-      return JSON.parse(stateData);
-    } catch (error) {
-      throw new Error(`Failed to load operation state: ${error.message}`);
-    }
-  }
-
-  /**
-   * Clean up old operation state files
-   */
-  async cleanupOldStates() {
-    const stateDir = path.join(os.tmpdir(), 'histofy-operations');
-    
-    try {
-      const files = await fs.readdir(stateDir);
-      const now = Date.now();
-      const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+      operationId = await manager.startOperation(type, metadata);
+      const result = await operation(operationId);
+      await manager.completeOperation(operationId, result);
       
-      for (const file of files) {
-        if (file.endsWith('.json')) {
-          const filePath = path.join(stateDir, file);
-          const stats = await fs.stat(filePath);
-          
-          if (now - stats.mtime.getTime() > maxAge) {
-            await fs.unlink(filePath);
-          }
-        }
-      }
+      return {
+        success: true,
+        result,
+        operationId
+      };
     } catch (error) {
-      // Non-critical error, just log it
-      console.warn(`Warning: Failed to cleanup old operation states: ${error.message}`);
+      if (operationId) {
+        await manager.failOperation(operationId, error);
+      }
+      
+      return {
+        success: false,
+        error: error.message,
+        operationId
+      };
     }
   }
 }
 
-module.exports = { OperationManager, Operation };
+module.exports = OperationManager;
