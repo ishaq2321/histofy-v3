@@ -129,6 +129,42 @@ function setupCommands() {
         }
       });
 
+    // Batch command
+    program
+      .command('batch')
+      .description('Batch operations for multiple commits')
+      .argument('<action>', 'Batch action (commit, template, import, export, validate)')
+      .option('-i, --input <file>', 'Input data file (CSV or JSON)')
+      .option('-o, --output <file>', 'Output file path')
+      .option('-t, --template <file>', 'Commit template file')
+      .option('--separator <char>', 'CSV separator character', ',')
+      .option('--no-headers', 'CSV file has no headers')
+      .option('--dry-run', 'Preview without executing')
+      .option('--continue-on-error', 'Continue processing despite errors')
+      .option('--concurrent <num>', 'Max concurrent operations', '1')
+      .option('--validate-only', 'Only validate data without execution')
+      .option('--preview', 'Show preview of first 5 commits')
+      .option('-y, --yes', 'Skip confirmation prompts')
+      .option('--create', 'Create new template (for template action)')
+      .option('--validate', 'Validate template or data')
+      .action(async (action, options) => {
+        const result = await OperationManager.execute('batch', async (operationId) => {
+          const batchCommand = require('./cli/batch');
+          return await batchCommand(action, options);
+        }, {
+          command: 'batch',
+          args: { action, options }
+        });
+
+        if (!result.success) {
+          console.error(chalk.red('Error in batch command:'), result.error);
+          return 1;
+        }
+      });
+
+    // Analyze command
+    program.addCommand(require('./cli/analyze'));
+
     // Migrate command
     program
       .command('migrate')
@@ -142,6 +178,7 @@ function setupCommands() {
       .option('--auto-resolve <strategy>', 'Automatic conflict resolution strategy (theirs|ours)')
       .option('--no-backup', 'Skip creating backup before migration')
       .option('--no-rollback', 'Disable automatic rollback on failure')
+      .option('--dry-run', 'Show what would be done without executing')
       .action(async (range, options) => {
         const result = await OperationManager.execute('migrate', async (operationId) => {
           const migrateCommand = require('./cli/migrate');
