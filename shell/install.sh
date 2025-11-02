@@ -1,26 +1,96 @@
 #!/bin/bash
 
-# Histofy v3 Shell Integration Installer
+# Histofy v3 Cross-Platform Shell Integration Installer
 # This script sets up shell functions and aliases for easier Histofy usage
+# Supports: Bash, ZSH, Fish, and PowerShell (via companion PowerShell script)
+
+# Version and metadata
+HISTOFY_VERSION="3.0.0"
+INSTALLER_VERSION="1.0.0"
 
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+PURPLE='\033[0;35m'
 NC='\033[0m' # No Color
+
+# Platform detection
+PLATFORM=$(uname -s)
+ARCH=$(uname -m)
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Detect shell
+# Detect operating system
+detect_os() {
+    case "$PLATFORM" in
+        "Linux")
+            if [ -f /etc/os-release ]; then
+                . /etc/os-release
+                echo "$ID"
+            else
+                echo "linux"
+            fi
+            ;;
+        "Darwin")
+            echo "macos"
+            ;;
+        "CYGWIN"* | "MINGW"* | "MSYS"*)
+            echo "windows"
+            ;;
+        *)
+            echo "unknown"
+            ;;
+    esac
+}
+
+# Detect shell with enhanced detection
 detect_shell() {
+    # Check environment variables first
     if [ -n "$ZSH_VERSION" ]; then
         echo "zsh"
     elif [ -n "$BASH_VERSION" ]; then
         echo "bash"
+    elif [ -n "$FISH_VERSION" ]; then
+        echo "fish"
     else
-        echo "unknown"
+        # Fallback to checking $SHELL variable
+        case "$SHELL" in
+            */zsh)
+                echo "zsh"
+                ;;
+            */bash)
+                echo "bash"
+                ;;
+            */fish)
+                echo "fish"
+                ;;
+            */dash)
+                echo "dash"
+                ;;
+            */sh)
+                echo "sh"
+                ;;
+            *)
+                echo "unknown"
+                ;;
+        esac
+    fi
+}
+
+# Detect package manager
+detect_package_manager() {
+    if command -v npm >/dev/null 2>&1; then
+        echo "npm"
+    elif command -v yarn >/dev/null 2>&1; then
+        echo "yarn"
+    elif command -v pnpm >/dev/null 2>&1; then
+        echo "pnpm"
+    else
+        echo "none"
     fi
 }
 
