@@ -3,6 +3,82 @@
 # Histofy v3 - Bash Shell Functions
 # Add these functions to your ~/.bashrc or ~/.bash_profile
 
+# Input validation and sanitization functions
+validate_date() {
+    local date="$1"
+    if [[ ! "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        echo "Error: Invalid date format. Use YYYY-MM-DD" >&2
+        return 1
+    fi
+    
+    # Check if date is valid using date command
+    if ! date -d "$date" >/dev/null 2>&1; then
+        echo "Error: Invalid date: $date" >&2
+        return 1
+    fi
+    
+    return 0
+}
+
+validate_time() {
+    local time="$1"
+    if [[ ! "$time" =~ ^[0-9]{1,2}:[0-9]{2}$ ]]; then
+        echo "Error: Invalid time format. Use HH:MM" >&2
+        return 1
+    fi
+    
+    local hour=$(echo "$time" | cut -d: -f1)
+    local minute=$(echo "$time" | cut -d: -f2)
+    
+    if [ "$hour" -gt 23 ] || [ "$minute" -gt 59 ]; then
+        echo "Error: Invalid time: $time" >&2
+        return 1
+    fi
+    
+    return 0
+}
+
+sanitize_message() {
+    local message="$1"
+    
+    # Remove potentially dangerous characters
+    message=$(echo "$message" | sed 's/[;&|`$(){}[\]\\<>]//g')
+    
+    # Trim whitespace
+    message=$(echo "$message" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    
+    # Check minimum length
+    if [ ${#message} -lt 5 ]; then
+        echo "Error: Commit message too short (minimum 5 characters)" >&2
+        return 1
+    fi
+    
+    # Check maximum length
+    if [ ${#message} -gt 72 ]; then
+        echo "Error: Commit message too long (maximum 72 characters)" >&2
+        return 1
+    fi
+    
+    echo "$message"
+    return 0
+}
+
+validate_count() {
+    local count="$1"
+    
+    if [[ ! "$count" =~ ^[0-9]+$ ]]; then
+        echo "Error: Count must be a positive number" >&2
+        return 1
+    fi
+    
+    if [ "$count" -lt 1 ] || [ "$count" -gt 20 ]; then
+        echo "Error: Count must be between 1 and 20" >&2
+        return 1
+    fi
+    
+    return 0
+}
+
 # Quick commit with custom date
 hc() {
     local message="$1"
@@ -15,7 +91,21 @@ hc() {
         return 1
     fi
     
-    histofy commit "$message" --date "$date" --time "$time" --add-all
+    # Validate and sanitize inputs
+    if ! validate_date "$date"; then
+        return 1
+    fi
+    
+    if ! validate_time "$time"; then
+        return 1
+    fi
+    
+    local sanitized_message
+    if ! sanitized_message=$(sanitize_message "$message"); then
+        return 1
+    fi
+    
+    histofy commit "$sanitized_message" --date "$date" --time "$time" --add-all
 }
 
 # Quick commit with push
@@ -30,7 +120,21 @@ hcp() {
         return 1
     fi
     
-    histofy commit "$message" --date "$date" --time "$time" --add-all --push
+    # Validate and sanitize inputs
+    if ! validate_date "$date"; then
+        return 1
+    fi
+    
+    if ! validate_time "$time"; then
+        return 1
+    fi
+    
+    local sanitized_message
+    if ! sanitized_message=$(sanitize_message "$message"); then
+        return 1
+    fi
+    
+    histofy commit "$sanitized_message" --date "$date" --time "$time" --add-all --push
 }
 
 
@@ -62,13 +166,33 @@ hcb() {
         return 1
     fi
     
+    # Validate inputs
+    if ! validate_date "$date"; then
+        return 1
+    fi
+    
+    if ! validate_count "$count"; then
+        return 1
+    fi
+    
+    local sanitized_base_message
+    if ! sanitized_base_message=$(sanitize_message "$base_message"); then
+        return 1
+    fi
+    
     local start_hour=9
     local hour_increment=2
     
     for ((i=1; i<=count; i++)); do
         local current_hour=$((start_hour + (i-1) * hour_increment))
+        
+        # Ensure hour doesn't exceed 23
+        if [ "$current_hour" -gt 23 ]; then
+            current_hour=$((current_hour - 24))
+        fi
+        
         local time=$(printf "%02d:00" $current_hour)
-        local message="$base_message - Part $i"
+        local message="$sanitized_base_message - Part $i"
         
         echo "Creating commit $i/$count: '$message' at $time"
         histofy commit "$message" --date "$date" --time "$time" --add-all
@@ -82,7 +206,7 @@ hcb() {
 hcy() {
     local message="$1"
     local time="${2:-12:00}"
-    local yesterday=$(date -d "yesterday" +%Y-%m-%d)
+    local yesterday=$(date -d "yesterday" +%Y-%m-%d 2>/dev/null || date -v-1d +%Y-%m-%d)
     
     if [ -z "$message" ]; then
         echo "Usage: hcy \"commit message\" [\"HH:MM\"]"
@@ -90,7 +214,17 @@ hcy() {
         return 1
     fi
     
-    histofy commit "$message" --date "$yesterday" --time "$time" --add-all
+    # Validate inputs
+    if ! validate_time "$time"; then
+        return 1
+    fi
+    
+    local sanitized_message
+    if ! sanitized_message=$(sanitize_message "$message"); then
+        return 1
+    fi
+    
+    histofy commit "$sanitized_message" --date "$yesterday" --time "$time" --add-all
 }
 
 # Commit for a week ago (useful for backfilling)
@@ -98,7 +232,6 @@ hcw() {
     local message="$1"
     local days_back="${2:-7}"
     local time="${3:-12:00}"
-    local target_date=$(date -d "$days_back days ago" +%Y-%m-%d)
     
     if [ -z "$message" ]; then
         echo "Usage: hcw \"commit message\" [days_back] [\"HH:MM\"]"
@@ -106,7 +239,36 @@ hcw() {
         return 1
     fi
     
-    histofy commit "$message" --date "$target_date" --time "$time" --add-all
+    # Validate days_back
+    if [[ ! "$days_back" =~ ^[0-9]+$ ]] || [ "$days_back" -lt 1 ] || [ "$days_back" -gt 365 ]; then
+        echo "Error: days_back must be a number between 1 and 365" >&2
+        return 1
+    fi
+    
+    # Calculate target date (cross-platform compatible)
+    local target_date
+    if command -v gdate >/dev/null 2>&1; then
+        # macOS with GNU date
+        target_date=$(gdate -d "$days_back days ago" +%Y-%m-%d)
+    elif date -d "1 day ago" >/dev/null 2>&1; then
+        # GNU date (Linux)
+        target_date=$(date -d "$days_back days ago" +%Y-%m-%d)
+    else
+        # BSD date (macOS default)
+        target_date=$(date -v-${days_back}d +%Y-%m-%d)
+    fi
+    
+    # Validate inputs
+    if ! validate_time "$time"; then
+        return 1
+    fi
+    
+    local sanitized_message
+    if ! sanitized_message=$(sanitize_message "$message"); then
+        return 1
+    fi
+    
+    histofy commit "$sanitized_message" --date "$target_date" --time "$time" --add-all
 }
 
 # Show current git status with histofy enhancements
