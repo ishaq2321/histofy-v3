@@ -18,6 +18,7 @@ const {
   ProgressUtils 
 } = require('../utils');
 const DryRunManager = require('../utils/DryRunManager');
+const OperationHistory = require('../utils/OperationHistory');
 
 const configManager = new ConfigManager();
 
@@ -197,6 +198,36 @@ const configCommand = {
       if (result.success) {
         progress.succeed('Configuration updated successfully');
         console.log(chalk.gray(`   ${key}: ${validationResult.value || value}`));
+        
+        // Record operation in history
+        try {
+          const operationHistory = new OperationHistory();
+          const previousValue = await configManager.get(key).catch(() => null);
+          
+          await operationHistory.recordOperation({
+            type: 'config',
+            command: 'config set',
+            args: {
+              key,
+              value: this.isSensitiveKey(key) ? '[ENCRYPTED]' : (validationResult.value || value),
+              sensitive: this.isSensitiveKey(key)
+            },
+            description: `Set configuration: ${key}`,
+            result: {
+              key,
+              success: true,
+              encrypted: result.encrypted || false
+            },
+            undoData: {
+              key,
+              previousValue: previousValue
+            },
+            duration: 1 // Config operations are typically fast
+          });
+        } catch (error) {
+          // Don't fail the config operation if history recording fails
+          console.log(chalk.yellow(`Warning: Failed to record operation in history: ${error.message}`));
+        }
         
         // Show related information
         if (key === 'github.token') {

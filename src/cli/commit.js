@@ -22,6 +22,7 @@ const {
   ProgressUtils 
 } = require('../utils');
 const DryRunManager = require('../utils/DryRunManager');
+const OperationHistory = require('../utils/OperationHistory');
 
 const configManager = new ConfigManager();
 
@@ -253,6 +254,41 @@ async function commitCommand(messageArg, options) {
       const gitError = new GitError(error.message, 'commit creation', error);
       console.log(ErrorHandler.handleGitError(gitError, 'creating commit'));
       return;
+    }
+
+    // Record operation in history
+    try {
+      const operationHistory = new OperationHistory();
+      const parentHash = await gitManager.getParentCommitHash(result.hash);
+      
+      await operationHistory.recordOperation({
+        type: 'commit',
+        command: 'commit',
+        args: {
+          message: messageValidation.value,
+          date: dateValidation.value,
+          time: timeValidation.value,
+          author: options.author,
+          addAll: options.addAll,
+          push: options.push
+        },
+        description: `Create commit: ${messageValidation.value}`,
+        result: {
+          hash: result.hash,
+          message: messageValidation.value,
+          date: dateValidation.value,
+          time: timeValidation.value
+        },
+        undoData: {
+          commitHash: result.hash,
+          parentHash: parentHash,
+          message: messageValidation.value
+        },
+        duration: Math.round((Date.now() - multiProgress.startTime) / 1000)
+      });
+    } catch (error) {
+      // Don't fail the commit if history recording fails
+      console.log(chalk.yellow(`Warning: Failed to record operation in history: ${error.message}`));
     }
 
     // Display commit info

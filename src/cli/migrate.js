@@ -18,6 +18,7 @@ const {
   ProgressUtils 
 } = require('../utils');
 const DryRunManager = require('../utils/DryRunManager');
+const OperationHistory = require('../utils/OperationHistory');
 
 /**
  * Handle migrate command
@@ -244,6 +245,42 @@ async function migrateCommand(commitRange, options) {
           if (executeResult.success) {
             executionProgress.succeed('Migration completed successfully');
             console.log(chalk.green('Migration completed successfully!'));
+            
+            // Record operation in history
+            try {
+              const operationHistory = new OperationHistory();
+              await operationHistory.recordOperation({
+                type: 'migrate',
+                command: 'migrate',
+                args: {
+                  range: rangeValidation.value,
+                  toDate: dateValidation.value,
+                  spread: spreadValidation.value,
+                  startTime: timeValidation.value,
+                  preserveOrder: options.preserveOrder,
+                  autoResolve: options.autoResolve
+                },
+                description: `Migrate ${result.commits.length} commits to ${dateValidation.value}`,
+                result: {
+                  migratedCommits: result.commits.length,
+                  strategy: result.strategy,
+                  backupBranch: executeResult.backupBranch
+                },
+                backupInfo: executeResult.backupBranch ? {
+                  backupBranch: executeResult.backupBranch,
+                  backupPath: null // GitManager handles backup internally
+                } : null,
+                undoData: {
+                  originalCommits: result.commits,
+                  backupBranch: executeResult.backupBranch,
+                  strategy: result.strategy
+                },
+                duration: Math.round((Date.now() - progress.startTime) / 1000)
+              });
+            } catch (error) {
+              // Don't fail the migration if history recording fails
+              console.log(chalk.yellow(`Warning: Failed to record operation in history: ${error.message}`));
+            }
             
             // Display migration details
             if (executeResult.migrationResult) {

@@ -167,6 +167,9 @@ function setupCommands() {
     // Analyze command
     program.addCommand(require('./cli/analyze'));
 
+    // Undo command
+    program.addCommand(require('./cli/undo'));
+
     // Migrate command
     program
       .command('migrate')

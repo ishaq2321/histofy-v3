@@ -1789,6 +1789,68 @@ class GitManager {
       throw new Error(`Failed to get repository info: ${error.message}`);
     }
   }
+  /**
+   * Get parent commit hash
+   * @param {string} commitHash - Commit hash
+   * @returns {Promise<string>} Parent commit hash
+   */
+  async getParentCommitHash(commitHash) {
+    try {
+      const result = await this.git.raw(['rev-parse', `${commitHash}^`]);
+      return result.trim();
+    } catch (error) {
+      // If no parent (root commit), return null
+      return null;
+    }
+  }
+
+  /**
+   * Get current commit hash (HEAD)
+   * @returns {Promise<string>} Current commit hash
+   */
+  async getCurrentCommitHash() {
+    try {
+      const result = await this.git.raw(['rev-parse', 'HEAD']);
+      return result.trim();
+    } catch (error) {
+      throw new Error(`Failed to get current commit hash: ${error.message}`);
+    }
+  }
+
+  /**
+   * Reset to a specific commit
+   * @param {string} commitHash - Target commit hash
+   * @param {Object} options - Reset options
+   */
+  async resetToCommit(commitHash, options = {}) {
+    const { hard = false } = options;
+    
+    try {
+      const resetArgs = ['reset'];
+      if (hard) {
+        resetArgs.push('--hard');
+      }
+      resetArgs.push(commitHash);
+      
+      await this.git.raw(resetArgs);
+      return { success: true, resetTo: commitHash };
+    } catch (error) {
+      throw new Error(`Failed to reset to commit ${commitHash}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get list of branches
+   * @returns {Promise<Array>} List of branch names
+   */
+  async getBranches() {
+    try {
+      const branches = await this.git.branch();
+      return branches.all.map(branch => branch.replace('remotes/origin/', ''));
+    } catch (error) {
+      throw new Error(`Failed to get branches: ${error.message}`);
+    }
+  }
 }
 
 module.exports = GitManager;
