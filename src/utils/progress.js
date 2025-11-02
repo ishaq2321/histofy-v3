@@ -243,7 +243,7 @@ class ProgressIndicator extends EventEmitter {
     }
 
     /**
-     * Render progress bar
+     * Render progress bar with enhanced information
      */
     renderProgressBar() {
         if (!this.progressBar || this.cancelled) return;
@@ -256,6 +256,7 @@ class ProgressIndicator extends EventEmitter {
         const bar = '█'.repeat(filled) + '░'.repeat(empty);
         const elapsed = this.getElapsedTime();
         const eta = this.calculateETA(current, total);
+        const memoryUsage = this.getMemoryUsage();
 
         let display = `${text} [${chalk.cyan(bar)}] ${percentage}%`;
 
@@ -267,9 +268,52 @@ class ProgressIndicator extends EventEmitter {
             display += ` | ETA: ${eta}`;
         }
 
+        if (this.options.showMemory && memoryUsage) {
+            display += ` | Mem: ${memoryUsage}`;
+        }
+
+        // Add rate information
+        const rate = this.calculateRate(current);
+        if (rate && this.options.showRate) {
+            display += ` | ${rate}/s`;
+        }
+
         // Clear line and write new progress
-        process.stdout.write('\r' + ' '.repeat(process.stdout.columns || 80) + '\r');
+        const terminalWidth = process.stdout.columns || 80;
+        process.stdout.write('\r' + ' '.repeat(terminalWidth) + '\r');
+        
+        // Truncate display if too long
+        if (display.length > terminalWidth - 5) {
+            display = display.substring(0, terminalWidth - 8) + '...';
+        }
+        
         process.stdout.write(display);
+    }
+
+    /**
+     * Get current memory usage
+     */
+    getMemoryUsage() {
+        try {
+            const usage = process.memoryUsage();
+            const heapUsed = Math.round(usage.heapUsed / 1024 / 1024);
+            return `${heapUsed}MB`;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    /**
+     * Calculate processing rate
+     */
+    calculateRate(current) {
+        if (!this.startTime || current === 0) return null;
+
+        const elapsed = (Date.now() - this.startTime) / 1000;
+        if (elapsed < 1) return null;
+
+        const rate = Math.round(current / elapsed);
+        return rate > 0 ? rate : null;
     }
 
     /**
@@ -311,12 +355,65 @@ class ProgressIndicator extends EventEmitter {
     }
 
     /**
-     * Setup cancellation handler (Ctrl+C)
+     * Setup enhanced cancellation handler with confirmation
      */
     setupCancellationHandler() {
-        const cancelHandler = () => {
-            this.cancel('Operation cancelled by user');
-            process.exit(1);
+        const cancelHandler = async () => {
+            if (this.cancelled) {
+                // Force exit on second Ctrl+C
+                console.log('\nForce exit...');
+                process.exit(1);
+                return;
+            }
+
+            // First Ctrl+C - ask for confirmation for destructive operations
+            if (this.options.confirmCancel) {
+                console.log('\n');
+                const inquirer = require('inquirer');
+                
+                try {
+                    const answer = await inquirer.prompt([{
+                        type: 'confirm',
+                        name: 'confirm',
+                        message: 'Are you sure you want to cancel this operation?',
+                        default: false
+                    }]);
+
+                    if (answer.confirm) {
+                        this.cancel('Operation cancelled by user');
+                        this.emit('cancelled', { confirmed: true });
+                        
+                        // Perform cleanup if provided
+                        if (this.options.onCancel && typeof this.options.onCancel === 'function') {
+                            await this.options.onCancel();
+                        }
+                        
+                        process.exit(0);
+                    } else {
+                        // Resume operation
+                        console.log('Continuing operation...');
+                        this.renderProgressBar();
+                    }
+                } catch (error) {
+                    // Fallback to immediate cancellation
+                    this.cancel('Operation cancelled by user');
+                    process.exit(1);
+                }
+            } else {
+                // Immediate cancellation for non-destructive operations
+                this.cancel('Operation cancelled by user');
+                this.emit('cancelled', { confirmed: false });
+                
+                if (this.options.onCancel && typeof this.options.onCancel === 'function') {
+                    try {
+                        await this.options.onCancel();
+                    } catch (error) {
+                        console.error('Cleanup failed:', error.message);
+                    }
+                }
+                
+                process.exit(0);
+            }
         };
 
         process.on('SIGINT', cancelHandler);
@@ -384,7 +481,7 @@ class ProgressIndicator extends EventEmitter {
 }
 
 /**
- * Multi-step progress manager
+ * Enhanced multi-step progress manager with better tracking and cleanup
  */
 class MultiStepProgress extends EventEmitter {
     constructor(steps = [], options = {}) {
@@ -394,42 +491,156 @@ class MultiStepProgress extends EventEmitter {
             id: index,
             name: step.name || `Step ${index + 1}`,
             description: step.description || '',
-            status: 'pending', // 'pending', 'running', 'completed', 'failed', 'skipped'
+            status: 'pending', // 'pending', 'running', 'completed', 'failed', 'skipped', 'cancelled'
             progress: 0,
             startTime: null,
             endTime: null,
-            error: null
+            error: null,
+            memoryUsage: null,
+            estimatedDuration: step.estimatedDuration || null
         }));
 
         this.currentStepIndex = 0;
+        this.totalStartTime = null;
+        this.cancelled = false;
+        this.cleanupTasks = [];
+        
         this.options = {
             showProgress: true,
             showElapsed: true,
+            showMemory: false,
+            showETA: true,
             autoAdvance: true,
+            confirmCancel: false,
             ...options
         };
+
+        // Setup cancellation handling
+        this.setupCancellationHandler();
     }
 
     /**
-     * Start the multi-step progress
+     * Setup cancellation handler for multi-step operations
+     */
+    setupCancellationHandler() {
+        const cancelHandler = async () => {
+            if (this.cancelled) {
+                console.log('\nForce exit...');
+                process.exit(1);
+                return;
+            }
+
+            console.log('\n');
+            
+            if (this.options.confirmCancel) {
+                const inquirer = require('inquirer');
+                
+                try {
+                    const answer = await inquirer.prompt([{
+                        type: 'confirm',
+                        name: 'confirm',
+                        message: 'Cancel multi-step operation? This may leave the system in an incomplete state.',
+                        default: false
+                    }]);
+
+                    if (answer.confirm) {
+                        await this.cancel('Multi-step operation cancelled by user');
+                    } else {
+                        console.log('Continuing operation...');
+                        this.renderSteps();
+                    }
+                } catch (error) {
+                    await this.cancel('Multi-step operation cancelled by user');
+                }
+            } else {
+                await this.cancel('Multi-step operation cancelled by user');
+            }
+        };
+
+        process.on('SIGINT', cancelHandler);
+        process.on('SIGTERM', cancelHandler);
+        this.cancelHandler = cancelHandler;
+    }
+
+    /**
+     * Cancel the multi-step operation with cleanup
+     */
+    async cancel(reason = 'Operation cancelled') {
+        this.cancelled = true;
+        
+        // Mark current step as cancelled
+        if (this.currentStepIndex < this.steps.length) {
+            const currentStep = this.steps[this.currentStepIndex];
+            if (currentStep.status === 'running') {
+                currentStep.status = 'cancelled';
+                currentStep.endTime = Date.now();
+            }
+        }
+
+        // Run cleanup tasks in reverse order
+        for (let i = this.cleanupTasks.length - 1; i >= 0; i--) {
+            try {
+                await this.cleanupTasks[i]();
+            } catch (error) {
+                console.error(`Cleanup task ${i} failed:`, error.message);
+            }
+        }
+
+        this.renderSteps();
+        console.log(chalk.yellow(`\n${reason}`));
+        
+        this.emit('cancelled', { reason, completedSteps: this.getCompletedCount() });
+        
+        // Remove signal handlers
+        if (this.cancelHandler) {
+            process.removeListener('SIGINT', this.cancelHandler);
+            process.removeListener('SIGTERM', this.cancelHandler);
+        }
+        
+        process.exit(0);
+    }
+
+    /**
+     * Add cleanup task to be executed on cancellation
+     */
+    addCleanupTask(cleanupFn) {
+        if (typeof cleanupFn === 'function') {
+            this.cleanupTasks.push(cleanupFn);
+        }
+    }
+
+    /**
+     * Remove cleanup task
+     */
+    removeCleanupTask(cleanupFn) {
+        const index = this.cleanupTasks.indexOf(cleanupFn);
+        if (index > -1) {
+            this.cleanupTasks.splice(index, 1);
+        }
+    }
+
+    /**
+     * Start the multi-step progress with enhanced tracking
      */
     start() {
+        this.totalStartTime = Date.now();
         console.log(chalk.blue(`Starting ${this.steps.length} step process...\n`));
         this.renderSteps();
         return this;
     }
 
     /**
-     * Start a specific step
+     * Start a specific step with enhanced tracking
      * @param {number} stepIndex - Step index to start
      * @param {string} description - Optional description update
      */
     startStep(stepIndex = this.currentStepIndex, description = null) {
-        if (stepIndex >= this.steps.length) return;
+        if (stepIndex >= this.steps.length || this.cancelled) return;
 
         const step = this.steps[stepIndex];
         step.status = 'running';
         step.startTime = Date.now();
+        step.memoryUsage = this.getMemoryUsage();
 
         if (description) {
             step.description = description;
@@ -438,6 +649,18 @@ class MultiStepProgress extends EventEmitter {
         this.renderSteps();
         this.emit('stepStart', { step, index: stepIndex });
         return this;
+    }
+
+    /**
+     * Get current memory usage
+     */
+    getMemoryUsage() {
+        try {
+            const usage = process.memoryUsage();
+            return Math.round(usage.heapUsed / 1024 / 1024); // MB
+        } catch (error) {
+            return null;
+        }
     }
 
     /**
@@ -538,13 +761,34 @@ class MultiStepProgress extends EventEmitter {
     }
 
     /**
-     * Render all steps with their current status
+     * Render all steps with enhanced information
      */
     renderSteps() {
         // Clear previous output
         console.clear();
 
-        console.log(chalk.blue(`Progress: ${this.getCompletedCount()}/${this.steps.length} steps completed\n`));
+        const completedCount = this.getCompletedCount();
+        const totalElapsed = this.totalStartTime ? this.formatDuration(Date.now() - this.totalStartTime) : '';
+        const overallETA = this.calculateOverallETA();
+
+        let header = chalk.blue(`Progress: ${completedCount}/${this.steps.length} steps completed`);
+        
+        if (this.options.showElapsed && totalElapsed) {
+            header += chalk.gray(` | Elapsed: ${totalElapsed}`);
+        }
+        
+        if (this.options.showETA && overallETA) {
+            header += chalk.gray(` | ETA: ${overallETA}`);
+        }
+
+        if (this.options.showMemory) {
+            const currentMemory = this.getMemoryUsage();
+            if (currentMemory) {
+                header += chalk.gray(` | Memory: ${currentMemory}MB`);
+            }
+        }
+
+        console.log(header + '\n');
 
         this.steps.forEach((step, index) => {
             const icon = this.getStepIcon(step.status);
@@ -558,9 +802,22 @@ class MultiStepProgress extends EventEmitter {
                 line += chalk.gray(` (${elapsed})`);
             }
 
+            // Show memory usage for completed steps
+            if (this.options.showMemory && step.memoryUsage) {
+                line += chalk.gray(` [${step.memoryUsage}MB]`);
+            }
+
             if (this.options.showProgress && step.status === 'running' && step.progress > 0) {
                 const progressBar = this.createProgressBar(step.progress);
                 line += `\n    ${progressBar}`;
+                
+                // Show step ETA
+                if (this.options.showETA) {
+                    const stepETA = this.calculateStepETA(step);
+                    if (stepETA) {
+                        line += chalk.gray(` | ETA: ${stepETA}`);
+                    }
+                }
             }
 
             if (step.error) {
@@ -571,6 +828,66 @@ class MultiStepProgress extends EventEmitter {
         });
 
         console.log(); // Empty line at the end
+    }
+
+    /**
+     * Calculate overall ETA for remaining steps
+     */
+    calculateOverallETA() {
+        if (!this.totalStartTime || this.cancelled) return null;
+
+        const completedSteps = this.steps.filter(s => s.status === 'completed' || s.status === 'skipped');
+        const remainingSteps = this.steps.filter(s => s.status === 'pending');
+
+        if (completedSteps.length === 0 || remainingSteps.length === 0) return null;
+
+        // Calculate average time per completed step
+        const totalCompletedTime = completedSteps.reduce((sum, step) => {
+            if (step.startTime && step.endTime) {
+                return sum + (step.endTime - step.startTime);
+            }
+            return sum;
+        }, 0);
+
+        if (totalCompletedTime === 0) return null;
+
+        const avgTimePerStep = totalCompletedTime / completedSteps.length;
+        const estimatedRemainingTime = avgTimePerStep * remainingSteps.length;
+
+        return this.formatDuration(estimatedRemainingTime);
+    }
+
+    /**
+     * Calculate ETA for current step
+     */
+    calculateStepETA(step) {
+        if (!step.startTime || step.progress === 0 || step.status !== 'running') return null;
+
+        const elapsed = Date.now() - step.startTime;
+        const rate = step.progress / elapsed;
+        const remaining = 100 - step.progress;
+        const eta = remaining / rate;
+
+        return this.formatDuration(eta);
+    }
+
+    /**
+     * Format duration in human-readable format
+     */
+    formatDuration(milliseconds) {
+        if (!milliseconds || milliseconds < 0) return null;
+
+        const seconds = Math.floor(milliseconds / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+
+        if (hours > 0) {
+            return `${hours}h ${minutes % 60}m`;
+        } else if (minutes > 0) {
+            return `${minutes}m ${seconds % 60}s`;
+        } else {
+            return `${seconds}s`;
+        }
     }
 
     /**
