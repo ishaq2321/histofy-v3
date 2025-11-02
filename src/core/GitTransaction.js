@@ -103,22 +103,23 @@ class GitTransaction {
     }
 
     try {
-      // Compare HEAD commits
-      const originalHead = await this.git.revparse([this.originalBranch]);
-      const backupHead = await this.git.revparse([this.backupBranch]);
+      // Try to access the backup branch directly - this is more reliable
+      try {
+        const backupHead = await this.git.revparse([this.backupBranch]);
+        const originalHead = await this.git.revparse([this.originalBranch]);
 
-      if (originalHead.trim() !== backupHead.trim()) {
-        throw new Error('Backup integrity check failed: HEAD commits do not match');
+        if (originalHead.trim() !== backupHead.trim()) {
+          throw new Error('Backup integrity check failed: HEAD commits do not match');
+        }
+      } catch (revParseError) {
+        throw new Error('Backup integrity check failed: Cannot access backup branch');
       }
 
-      // Verify branch exists and is accessible
-      const branches = await this.git.branch(['-a']);
-      const backupExists = branches.all.some(branch => 
-        branch.name === this.backupBranch
-      );
-
-      if (!backupExists) {
-        throw new Error('Backup integrity check failed: Backup branch not found');
+      // Additional verification - try to show the backup branch
+      try {
+        await this.git.raw(['show-branch', this.backupBranch]);
+      } catch (showBranchError) {
+        throw new Error('Backup integrity check failed: Backup branch is not accessible');
       }
 
       return true;
@@ -181,18 +182,22 @@ class GitTransaction {
     }
 
     try {
-      // Verify backup still exists and is valid
-      await this.verifyBackupIntegrity();
-
       // Get current branch
       const currentBranch = (await this.git.branch()).current;
+
+      // Try to access backup branch directly instead of verifying integrity first
+      let backupHead;
+      try {
+        backupHead = await this.git.revparse([this.backupBranch]);
+      } catch (error) {
+        throw new Error('Backup branch is not accessible for rollback');
+      }
 
       // Reset current branch to backup state
       await this.git.reset(['--hard', this.backupBranch]);
 
-      // Verify rollback success
+      // Verify rollback success by comparing HEAD
       const currentHead = await this.git.revparse(['HEAD']);
-      const backupHead = await this.git.revparse([this.backupBranch]);
 
       if (currentHead.trim() !== backupHead.trim()) {
         throw new Error('Rollback verification failed: Repository state not properly restored');
