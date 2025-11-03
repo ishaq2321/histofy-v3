@@ -345,11 +345,17 @@ npm run test:performance
 
 ## 📖 Documentation
 
+- **[📚 Complete Documentation](../../tree/docs)** - Comprehensive guides with live examples
+- **[🚀 Quick Start Guide](../../tree/docs/docs/QUICK_START.md)** - Get started in 5 minutes
+- **[📋 Command Reference](../../tree/docs/docs/COMMANDS.md)** - All commands with real outputs
+- **[🎯 Real-World Examples](../../tree/docs/docs/EXAMPLES.md)** - Practical usage scenarios
 - **[Installation Guide](installers/README.md)** - Detailed installation instructions
 - **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
 - **[FAQ](FAQ.md)** - Frequently asked questions
 - **[Contributing](CONTRIBUTING.md)** - Development guidelines
 - **[Changelog](CHANGELOG.md)** - Version history and changes
+
+> **🎭 Special**: Our [documentation branch](../../tree/docs) was created using Histofy v3 itself, demonstrating real custom date commits with realistic development patterns!
 
 ## 🆘 Support & Community
 
