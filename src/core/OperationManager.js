@@ -499,10 +499,8 @@ class OperationManager {
       };
     }
   }
-}
 
-module.exports = OperationManager;  
-/**
+  /**
    * Sanitize metadata for audit logging
    */
   sanitizeMetadata(metadata) {
@@ -541,3 +539,6 @@ module.exports = OperationManager;
     
     return sanitized;
   }
+}
+
+module.exports = OperationManager;

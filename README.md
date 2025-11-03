@@ -1,160 +1,212 @@
 # Histofy v3 🚀
 
-> Advanced terminal-based Git history manipulation tool with comprehensive features
+**Enhanced Git History Management with Custom Date Commits**
 
-Histofy v3 is a powerful CLI tool for Git history manipulation, offering custom commit dates, batch operations, performance monitoring, and comprehensive analysis tools. Perfect for developers who need precise control over their Git history.
+[![npm version](https://badge.fury.io/js/histofy-cli.svg)](https://badge.fury.io/js/histofy-cli)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node.js Version](https://img.shields.io/badge/node-%3E%3D16.0.0-brightgreen)](https://nodejs.org/)
+[![Platform Support](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue)](https://github.com/ishaq2321/histofy-v3)
 
-> **Note**: For pattern-based contribution management, check out [Histofy v2](https://github.com/ishaq2321/histofy-v2.git) which includes pattern creation, templates, and deployment features.
+Histofy v3 is a powerful, enterprise-grade Git history management tool that allows you to create commits with custom dates, perform bulk operations, and maintain comprehensive audit trails. Perfect for developers, teams, and organizations who need precise control over their Git history.
 
-## ✨ Features
+## ✨ Key Features
 
-### Core Features
-- **🎯 Custom Date Commits**: Create commits with any date and time
-- **🔄 Commit Migration**: Safely migrate existing commits to new dates with automatic backups
-- **📦 Batch Operations**: Process multiple commits from CSV/JSON data with templates
-- **🔧 Configuration Management**: Encrypted configuration with validation and recovery
-- **📊 Repository Analysis**: Comprehensive commit pattern and author contribution analysis
+- 🕒 **Custom Date Commits** - Create commits with any date and time
+- 🔒 **Enterprise Security** - Input validation, encryption, and audit trails
+- ⚡ **High Performance** - Optimized for large repositories with streaming operations
+- 🌐 **Cross-Platform** - Native support for Windows, macOS, and Linux
+- 🔄 **Batch Operations** - Process multiple commits from CSV/JSON files
+- 📊 **Repository Analysis** - Comprehensive commit pattern analysis
+- 🔌 **RESTful API** - Programmatic access with authentication
+- 🪝 **Webhook System** - Event-driven automation
+- 📋 **Audit & Compliance** - Complete operation logging and reporting
+- 🛠️ **Shell Integration** - Quick functions and auto-completion
 
-### Advanced Features
-- **⚡ Performance Monitoring**: Real-time performance profiling and optimization alerts
-- **🔍 Interactive Help System**: Contextual help, tutorials, and troubleshooting guides
-- **📈 Streaming Operations**: Memory-efficient processing for large repositories
-- **🛡️ Security & Validation**: Input sanitization and comprehensive security measures
-- **📋 Operation History**: Full undo capabilities with operation tracking
-- **🌐 GitHub Integration**: Rate-limited API calls with comprehensive error handling
+## 🚀 Quick Installation
 
-### Developer Experience
-- **🎓 Interactive Tutorials**: Step-by-step guides for all features
-- **🔧 Dry-Run Mode**: Preview all operations before execution
-- **📊 Progress Tracking**: Real-time progress with ETA calculations
-- **🚨 Smart Error Handling**: Contextual help and recovery suggestions
-- **⚡ Shell Integration**: Quick functions and auto-completion support
+### Option 1: One-Line Installer (Recommended)
 
-## 🚀 Quick Start
+**macOS:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/ishaq2321/histofy-v3/main/installers/macos/install.sh | bash
+```
 
-### Installation
+**Linux:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/ishaq2321/histofy-v3/main/installers/linux/install.sh | bash
+```
+
+**Windows (PowerShell):**
+```powershell
+iwr -useb https://raw.githubusercontent.com/ishaq2321/histofy-v3/main/installers/windows/install.ps1 | iex
+```
+
+### Option 2: Manual Installation
+
+**Using npm:**
+```bash
+npm install -g histofy-cli
+```
+
+**Using yarn:**
+```bash
+yarn global add histofy-cli
+```
+
+### Option 3: From Source (GitHub CLI)
 
 ```bash
-# Clone the repository
-git clone https://github.com/histofy/histofy-v3.git
+# Clone repository using GitHub CLI
+gh repo clone ishaq2321/histofy-v3
 cd histofy-v3
 
 # Install dependencies
 npm install
 
-# Install globally
+# Install globally from source
 npm install -g .
-
-# Setup shell integration
-npm run setup-shell
 ```
 
-### Quick Start
+## 🎯 Quick Start
 
+### 1. Initialize Configuration
+```bash
+histofy config init
+```
+
+### 2. Set Your GitHub Token (Optional)
+```bash
+histofy config set github.token YOUR_GITHUB_TOKEN
+```
+
+### 3. Create Your First Custom Date Commit
+```bash
+# Basic commit with custom date
+histofy commit "Fix critical bug" --date "2023-12-25" --time "14:30"
+
+# Quick commit using shell function
+hc "Add new feature" 2023-12-25 14:30
+```
+
+### 4. Check Status
+```bash
+histofy status
+# or use the quick function
+hs
+```
+
+## 📚 Core Commands
+
+### Commit Operations
+```bash
+# Create commit with custom date
+histofy commit "Your message" --date "2023-12-25" --time "14:30"
+
+# Interactive commit with date picker
+histofy commit --interactive
+
+# Commit and push
+histofy commit "Deploy fix" --date "2023-12-25" --push
+
+# Dry run (preview only)
+histofy commit "Test commit" --date "2023-12-25" --dry-run
+```
+
+### Batch Operations
+```bash
+# Process commits from CSV file
+histofy batch process --file commits.csv
+
+# Generate commit template
+histofy batch template --output template.csv
+
+# Validate batch file
+histofy batch validate --file commits.csv
+```
+
+### Repository Analysis
+```bash
+# Comprehensive analysis
+histofy analyze --all
+
+# Commit patterns
+histofy analyze patterns --since "2023-01-01"
+
+# Author statistics
+histofy analyze authors --format json
+```
+
+### Configuration Management
 ```bash
 # Initialize configuration
 histofy config init
 
-# Get interactive help
-histofy help tutorial getting-started
+# Set configuration values
+histofy config set git.defaultAuthor "Your Name <email@example.com>"
+histofy config set github.token "your-token"
 
-# Create a commit with custom date
-histofy commit "My commit" --date 2023-06-15 --time 14:30
+# List all configuration
+histofy config list
 
-# Preview before executing
-histofy commit "Test commit" --dry-run
-
-# Check repository status
-histofy status --remote
-
-# Enable performance monitoring
-histofy --profile commit "Monitored commit"
+# Validate configuration
+histofy config validate
 ```
 
-## 📖 Commands
+## 🛠️ Shell Integration
 
-### Core Commands
+Histofy v3 includes powerful shell integration with quick functions:
 
-#### `histofy commit` - Custom Date Commits
-Create commits with precise date and time control.
+### Quick Functions
+- `hc` - Quick commit with date: `hc "Fix bug" 2023-12-25 14:30`
+- `hcp` - Quick commit with push: `hcp "Deploy" 2023-12-25`
+- `hs` - Show status: `hs --remote`
+- `hci` - Interactive commit: `hci`
+- `hh` - Quick help: `hh`
+- `ha` - Analysis: `ha --patterns`
+- `hp` - Performance monitoring: `hp --summary`
 
+### Auto-Completion
+Histofy v3 provides intelligent auto-completion for:
+- **Bash** - Tab completion for all commands and options
+- **Zsh** - Advanced completion with descriptions
+- **Fish** - Rich completions with help text
+- **PowerShell** - Native PowerShell completion
+
+## 🔌 API & Integration
+
+### RESTful API Server
 ```bash
-# Interactive commit with prompts
-histofy commit
+# Start API server
+histofy server --port 3000
 
-# Direct commit with custom date
-histofy commit "Fix authentication bug" --date 2023-06-15 --time 14:30
-
-# Add all changes and commit
-histofy commit "Major refactoring" --add-all --date 2023-06-10
-
-# Commit with custom author
-histofy commit "Update docs" --author "John Doe <john@example.com>"
-
-# Commit and push immediately
-histofy commit "Hotfix" --push --date 2023-06-15
-
-# Preview commit without executing
-histofy commit "Test commit" --dry-run
+# With custom API key
+histofy server --port 3000 --api-key your-secret-key
 ```
 
-#### `histofy migrate` - Commit Date Migration
-Safely migrate existing commits to new dates with automatic backups.
-
+### Webhook Management
 ```bash
-# Migrate single commit
-histofy migrate abc123 --to-date 2023-06-15
+# Register webhook
+histofy webhook register my-webhook --url https://api.example.com/webhook --events commit.created,migration.completed
 
-# Migrate commit range
-histofy migrate HEAD~5..HEAD --to-date 2023-06-15
+# Test webhook
+histofy webhook test my-webhook
 
-# Preview migration without executing
-histofy migrate HEAD~5..HEAD --to-date 2023-06-15 --dry-run
-
-# Force migration with conflicts
-histofy migrate HEAD~10..HEAD --to-date 2023-06-15 --force
+# List webhooks
+histofy webhook list
 ```
 
-#### `histofy batch` - Bulk Operations
-Process multiple commits efficiently from data files.
-
+### Workflow Automation
 ```bash
-# Batch commit from CSV
-histofy batch commit --input commits.csv
+# Define workflow from file
+histofy workflow define my-workflow --file workflow.json
 
-# Create commit template
-histofy batch template --create --output template.json
-
-# Import commits with template
-histofy batch import --input data.json --template template.json
-
-# Export commit history
-histofy batch export --output history.csv --format csv
-
-# Validate data without processing
-histofy batch validate --input commits.csv --validate-only
+# Execute workflow
+histofy workflow execute my-workflow --context '{"branch":"main"}'
 ```
 
-#### `histofy analyze` - Repository Analysis
-Comprehensive analysis of commit patterns and repository health.
+## 📊 Advanced Features
 
-```bash
-# Basic repository analysis
-histofy analyze
-
-# Author contribution analysis
-histofy analyze --authors
-
-# Temporal analysis with charts
-histofy analyze --temporal --charts
-
-# Export analysis report
-histofy analyze --export report.json --format json
-```
-
-#### `histofy performance` - Performance Monitoring
-Monitor and optimize operation performance.
-
+### Performance Monitoring
 ```bash
 # Enable performance monitoring
 histofy performance --enable
@@ -162,538 +214,108 @@ histofy performance --enable
 # Show performance summary
 histofy performance --summary
 
-# Generate detailed report
+# Generate performance report
 histofy performance --report --output perf-report.json
-
-# Export performance data
-histofy performance --export json --output perf-data.json
 ```
 
-#### `histofy help` - Enhanced Help System
-Interactive help with examples and tutorials.
-
+### Audit & Compliance
 ```bash
-# Show main help
-histofy help
+# View audit logs
+histofy audit logs --since "2023-01-01"
 
-# Show command examples
-histofy help examples commit
+# Generate compliance report
+histofy audit report --format pdf --output compliance-report.pdf
 
-# Run interactive tutorial
-histofy help tutorial getting-started
-
-# List all tutorials
-histofy help tutorials
-
-# Show troubleshooting guide
-histofy help troubleshooting
-
-# Show FAQ
-histofy help faq
+# Verify repository integrity
+histofy audit verify --deep
 ```
 
-#### `histofy config` - Configuration Management
-Secure configuration with encryption and validation.
-
+### Data Export/Import
 ```bash
-# Initialize configuration
-histofy config init
+# Export commit history
+histofy export commits --format json --output commits.json
 
-# Set GitHub token (encrypted)
-histofy config set github.token ghp_your_token_here
+# Export configuration
+histofy export config --output config-backup.yml
 
-# Set default author
-histofy config set git.defaultAuthor "Jane Smith <jane@example.com>"
-
-# Preview configuration changes
-histofy config set git.defaultBranch main --dry-run
-
-# List all configuration
-histofy config list
+# Import commits from file
+histofy import commits --file commits.json --validate
 ```
 
-#### `histofy status` - Repository Status
-Enhanced status with health checks and remote information.
-
+### Operation History & Undo
 ```bash
-# Basic repository status
-histofy status
-
-# Include GitHub remote information
-histofy status --remote
-```
-
-### Utility Commands
-
-#### `histofy undo` - Operation History
-Undo recent Histofy operations with full rollback.
-
-```bash
-# Show operation history
+# View operation history
 histofy undo list
 
 # Undo last operation
-histofy undo
+histofy undo last
 
 # Undo specific operation
-histofy undo abc123
-
-# Clear operation history
-histofy undo clear
+histofy undo operation abc123
 ```
 
-#### `histofy export/import` - Data Management
-Export and import commit data in various formats.
+## 🔧 Configuration
 
+### Essential Settings
 ```bash
-# Export commit history
-histofy export --format csv --output commits.csv
+# Git defaults
+histofy config set git.defaultAuthor "Your Name <email@example.com>"
+histofy config set git.defaultTime "12:00"
 
-# Import commit data
-histofy import --input commits.json --format json
+# GitHub integration
+histofy config set github.token "your-github-token"
+histofy config set github.username "your-username"
+
+# Performance settings
+histofy config set performance.enabled true
+histofy config set performance.memoryLimit "512MB"
+
+# Security settings
+histofy config set security.encryptConfig true
+histofy config set audit.enabled true
 ```
 
-## 🔧 Shell Functions
-
-Histofy v3 includes convenient shell functions for quick operations:
-
-### Quick Functions
-
-```bash
-# Quick commit with date
-hc "commit message" "2023-06-15" "14:30"
-
-# Quick commit with push
-hcp "commit message" "2023-06-15" "14:30"
-
-# Show status
-hs
-
-# Interactive commit
-hci
-
-# Show help
-hh
-```
-
-### Batch Functions
-
-```bash
-# Batch commits for today
-hcb "base message" "2023-06-15" 5
-
-# Commit for yesterday
-hcy "yesterday's work" "15:30"
-
-# Commit for a week ago
-hcw "last week's work" 7 "10:00"
-```
-
-### Setup Shell Integration
-
-```bash
-# Run the installer
-npm run setup-shell
-
-# Or manually source functions
-source ./shell/bash_functions.sh
-
-# Reload your shell
-source ~/.bashrc
-```
-
-## ⚙️ Configuration
-
-Configuration is stored in `~/.histofy/config.yaml`:
-
-```yaml
-github:
-  token: "ghp_your_token_here"
-  username: "your-username"
-  defaultRepo: "username/default-repo"
-
-git:
-  defaultAuthor: "Your Name"
-  defaultEmail: "your.email@example.com"
-  defaultTime: "12:00"
-
-ui:
-  showBanner: true
-  colorOutput: true
-  verboseOutput: false
-```
-
-### Required Configuration
-
-1. **GitHub Token**: Personal Access Token with repo permissions
-   ```bash
-   histofy config set github.token ghp_your_token_here
-   ```
-
-2. **GitHub Username**: Your GitHub username
-   ```bash
-   histofy config set github.username your-username
-   ```
-
-## 🔒 Security
-
-- GitHub tokens are stored locally in `~/.histofy/config.yaml`
-- Tokens are masked in status output
-- No data is sent to external services except GitHub API
-- Local git operations only
-
-## 🛠️ Development
-
-### Setup Development Environment
-
-```bash
-# Clone and install
-git clone https://github.com/histofy/histofy-v3.git
-cd histofy-v3
-npm install
-
-# Link for global testing
-npm link
-
-# Run in development mode
-npm run dev
-```
-
-### Project Structure
-
-```
-histofy-v3/
-├── src/
-│   ├── cli/           # CLI command handlers
-│   ├── core/          # Core business logic
-│   ├── config/        # Configuration management
-│   └── index.js       # Main entry point
-├── bin/histofy        # Executable script
-├── shell/             # Shell integration
-├── tests/            # Test files
-└── docs/             # Documentation
-```
-
-### Adding New Commands
-
-1. Create handler in `src/cli/`
-2. Register in `src/index.js`
-3. Add to shell functions if needed
-4. Update documentation
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📞 Support
-
-- 📧 Email: ishaq2321@proton.me
-- 🐛 Issues: [GitHub Issues](https://github.com/histofy/histofy-v3/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/histofy/histofy-v3/discussions)
-
----
-
-<div align="center">
-
-**Built with 💚 in solidarity with Palestine 🇵🇸**
-
-*"In the face of injustice, silence is complicity. We stand with the Palestinian people in their struggle for freedom, dignity, and human rights."*
-
-🟢⚪🔴 **#FreePalestine** 🔴⚪🟢
-
-</div>
-
-## 🚀 Advanced Usage
-
-### Global Options
-All commands support these global options:
-
-```bash
-# Enable performance profiling
-histofy --profile commit "Profiled commit"
-
-# Show performance summary after operation
-histofy --perf-summary status
-
-# Enable verbose output for debugging
-histofy --verbose migrate HEAD~3..HEAD --to-date 2023-06-15
-
-# Disable ASCII banner (useful for scripts)
-histofy --no-banner status
-```
-
-### Batch Operations with Templates
-
-Create a CSV file for batch commits:
-```csv
-message,date,author
-Fix authentication bug,2023-06-15,John Doe <john@example.com>
-Add new feature,2023-06-16,Jane Smith <jane@example.com>
-Update documentation,2023-06-17,Bob Wilson <bob@example.com>
-```
-
-Process the batch:
-```bash
-# Validate data first
-histofy batch validate --input commits.csv
-
-# Preview operations
-histofy batch commit --input commits.csv --dry-run
-
-# Execute batch commits
-histofy batch commit --input commits.csv
-```
-
-### Performance Monitoring
-
-Enable comprehensive performance monitoring:
-```bash
-# Enable monitoring
-histofy performance --enable
-
-# Run operations (they'll be automatically profiled)
-histofy commit "Test commit"
-histofy migrate HEAD~5..HEAD --to-date 2023-06-15
-
-# View performance summary
-histofy performance --summary
-
-# Generate detailed report
-histofy performance --report --output performance-report.json
-```
-
-### Repository Analysis
-
-Get comprehensive insights into your repository:
-```bash
-# Full analysis with all metrics
-histofy analyze --authors --temporal --charts
-
-# Export analysis for external tools
-histofy analyze --export analysis.json --format json
-
-# Focus on specific aspects
-histofy analyze --authors  # Author contributions only
-histofy analyze --temporal # Time-based patterns only
-```
-
-## 🔧 Shell Integration
-
-Histofy provides powerful shell functions for quick operations:
-
-### Installation
-```bash
-# Automatic setup
-npm run setup-shell
-
-# Manual setup (add to ~/.bashrc or ~/.zshrc)
-source /path/to/histofy-v3/shell/bash_functions.sh
-```
-
-### Quick Functions
-```bash
-# Quick commit with date
-hc "commit message" "2023-06-15" "14:30"
-
-# Quick commit with push
-hcp "commit message" "2023-06-15" "14:30"
-
-# Interactive commit
-hci
-
-# Show status
-hs
-
-# Show help
-hh
-
-# Batch commits for today
-hcb "base message" "2023-06-15" 5
-
-# Commit for yesterday
-hcy "yesterday's work" "15:30"
-
-# Commit for a week ago
-hcw "last week's work" 7 "10:00"
-```
-
-## ⚙️ Configuration
-
-### Configuration File
-Histofy uses `~/.histofy.yml` for configuration:
-
-```yaml
-github:
-  token: "encrypted_token_here"
-  username: "your-username"
-  apiUrl: "https://api.github.com"
-
-git:
-  defaultAuthor: "Your Name <your.email@example.com>"
-  defaultTime: "12:00"
-  defaultBranch: "main"
-
-performance:
-  enableProfiling: false
-  alertThresholds:
-    operationTime: 10000  # 10 seconds
-    memoryUsage: 80       # 80%
-
-security:
-  encryptSensitiveData: true
-  validateInputs: true
-```
-
-### Environment Variables
-```bash
-export HISTOFY_CONFIG_PATH="/custom/path/.histofy.yml"
-export HISTOFY_GITHUB_TOKEN="your_token_here"
-export HISTOFY_DEBUG="true"
-```
-
-## 🛡️ Security
-
-Histofy implements comprehensive security measures:
-
-- **Input Validation**: All user inputs are sanitized and validated
-- **Configuration Encryption**: Sensitive data is encrypted at rest
-- **Command Injection Prevention**: Safe command execution with parameter validation
-- **Path Traversal Protection**: File operations are restricted to safe directories
-- **GitHub Token Security**: Tokens are encrypted and never logged
-
-## 🔍 Troubleshooting
-
-### Common Issues
-
-#### "Not a git repository" Error
-```bash
-# Solution: Initialize Git repository
-git init
-git remote add origin <repository-url>
-```
-
-#### "Configuration file not found" Error
-```bash
-# Solution: Initialize Histofy configuration
-histofy config init
-```
-
-#### "Invalid GitHub token" Error
-```bash
-# Solution: Update your GitHub token
-# 1. Generate new token: GitHub Settings > Developer settings > Personal access tokens
-# 2. Update configuration:
-histofy config set github.token YOUR_NEW_TOKEN
-```
-
-#### "Permission denied" Errors
-```bash
-# Check file permissions
-ls -la
-chmod 644 filename
-
-# Check directory permissions
-chmod 755 dirname
-```
-
-#### "Invalid date format" Errors
-```bash
-# Use YYYY-MM-DD format for dates
-histofy commit "message" --date 2023-06-15
-
-# Use HH:MM format for times
-histofy commit "message" --date 2023-06-15 --time 14:30
-```
-
-### Getting Help
-
-```bash
-# Interactive help system
-histofy help
-
-# Command-specific help
-histofy help commit
-
-# Show examples
-histofy help examples commit
-
-# Run tutorial
-histofy help tutorial getting-started
-
-# Troubleshooting guide
-histofy help troubleshooting
-
-# FAQ
-histofy help faq
-```
-
-### Debug Mode
-```bash
-# Enable verbose output
-histofy --verbose <command>
-
-# Enable debug logging
-export HISTOFY_DEBUG=true
-histofy <command>
-
-# Check repository health
-histofy status
-```
-
-## ❓ FAQ
-
-### General Questions
-
-**Q: What is Histofy and what does it do?**
-A: Histofy is a tool for manipulating Git commit history. It allows you to create commits with custom dates, migrate existing commits to new dates, and perform bulk operations on commit history.
-
-**Q: Is it safe to use Histofy on my repository?**
-A: Yes, Histofy creates automatic backups before any destructive operations. You can always restore your repository to its previous state. However, be cautious when working with shared repositories.
-
-**Q: Can I use Histofy with GitHub/remote repositories?**
-A: Yes, but be careful with shared repositories. Changing commit history affects other collaborators. Use force-push carefully and coordinate with your team.
-
-### Technical Questions
-
-**Q: What file formats does Histofy support for batch operations?**
-A: Histofy supports CSV and JSON formats for batch operations. CSV files should have headers like "message,date,author". JSON files should contain arrays of commit objects.
-
-**Q: How do I undo a Histofy operation?**
-A: Use the `histofy undo` command to reverse recent operations. Histofy maintains an operation history and can restore previous states automatically.
-
-**Q: Can I customize commit templates?**
-A: Yes, use `histofy batch template --create` to create custom templates. Templates support variable substitution and can be reused for consistent commit formatting.
-
-**Q: How do I monitor performance of large operations?**
-A: Enable performance monitoring with `histofy performance --enable` or use the `--profile` flag with any command. This provides detailed metrics and optimization suggestions.
-
-### Workflow Questions
-
-**Q: What should I do if a migration fails?**
-A: Histofy automatically restores your repository from backup if a migration fails. Check the error message, resolve any issues, and try again. Use `--dry-run` to preview first.
-
-**Q: How do I configure Histofy for my team?**
-A: Create a shared configuration template with `histofy config init`, then distribute it to team members. Set common defaults like author information and GitHub tokens.
-
-**Q: Can I use Histofy in CI/CD pipelines?**
-A: Yes, Histofy supports machine-readable output and non-interactive modes. Use `--no-banner` for scripts and `--dry-run` for validation steps.
-
-## 🤝 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### Development Setup
+### Configuration File Location
+- **Windows:** `%APPDATA%\\histofy\\config.yml`
+- **macOS:** `~/.histofy/config.yml`
+- **Linux:** `~/.histofy/config.yml`
+
+## 🌐 Cross-Platform Support
+
+### System Requirements
+- **Node.js:** v16.0.0 or later
+- **Git:** v2.20.0 or later
+- **Operating System:**
+  - Windows 10 1809+ or Windows Server 2019+
+  - macOS 10.15 (Catalina) or later
+  - Linux (Ubuntu 18.04+, Debian 10+, CentOS 7+, Fedora 30+, Arch)
+
+### Shell Support
+- **Windows:** PowerShell 5.1+, PowerShell 7+
+- **macOS/Linux:** Bash 4.0+, Zsh 5.0+, Fish 3.0+
+
+## 🔒 Security Features
+
+- **Input Validation** - All user inputs are sanitized and validated
+- **Command Injection Prevention** - Secure command execution throughout
+- **Configuration Encryption** - Sensitive data encrypted at rest
+- **Audit Logging** - Complete operation tracking with integrity verification
+- **Access Control** - Secure configuration and operation access
+
+## 📈 Performance Features
+
+- **Streaming Operations** - Memory-efficient processing for large repositories
+- **Git Operation Optimization** - Batched operations with connection reuse
+- **Memory Management** - Automatic garbage collection and usage monitoring
+- **Parallel Processing** - Safe concurrent operations where applicable
+- **Intelligent Caching** - Smart caching for frequently accessed Git data
+
+## 🧪 Development Setup
+
+### From Source
 ```bash
 # Clone repository
-git clone https://github.com/ishaq2321/histofy-v3.git
+gh repo clone ishaq2321/histofy-v3
 cd histofy-v3
 
 # Install dependencies
@@ -702,42 +324,64 @@ npm install
 # Run tests
 npm test
 
-# Run with development mode
-npm run dev
+# Install globally from source
+npm install -g .
 ```
 
-### Running Tests
+### Development Commands
 ```bash
-# Run all tests
-npm test
-
-# Run specific test file
-npm test -- tests/cli/commit.test.js
-
 # Run tests with coverage
 npm run test:coverage
+
+# Run linting
+npm run lint
+
+# Run security tests
+npm run test:security
 
 # Run performance tests
 npm run test:performance
 ```
 
+## 📖 Documentation
+
+- **[Installation Guide](installers/README.md)** - Detailed installation instructions
+- **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues and solutions
+- **[FAQ](FAQ.md)** - Frequently asked questions
+- **[Contributing](CONTRIBUTING.md)** - Development guidelines
+- **[Changelog](CHANGELOG.md)** - Version history and changes
+
+## 🆘 Support & Community
+
+- **📧 Email:** [ishaq2321@proton.me](mailto:ishaq2321@proton.me)
+- **🐛 Issues:** [GitHub Issues](https://github.com/ishaq2321/histofy-v3/issues)
+- **💬 Discussions:** [GitHub Discussions](https://github.com/ishaq2321/histofy-v3/discussions)
+- **📚 Documentation:** [GitHub Wiki](https://github.com/ishaq2321/histofy-v3/wiki)
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details on:
+
+- Code of Conduct
+- Development setup
+- Pull request process
+- Coding standards
+- Testing requirements
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## 🌟 Acknowledgments
 
-- Built with [Commander.js](https://github.com/tj/commander.js/) for CLI framework
-- Uses [simple-git](https://github.com/steveukx/git-js) for Git operations
-- Styled with [chalk](https://github.com/chalk/chalk) for terminal colors
-- Progress tracking with [ora](https://github.com/sindresorhus/ora)
-
-## 📞 Support
-
-- 📧 Email: ishaq2321@proton.me
-- 🐛 Issues: [GitHub Issues](https://github.com/ishaq2321/histofy-v3/issues)
-- 💬 Discussions: [GitHub Discussions](https://github.com/ishaq2321/histofy-v3/discussions)
+- Built with modern Node.js and enterprise-grade security
+- Inspired by the need for precise Git history management
+- Community-driven development and feedback
 
 ---
 
-**Made with ❤️ by [Ishaq](https://github.com/ishaq2321)**
+**Built with 💚 in solidarity with Palestine 🇵🇸**
+
+*"In the face of injustice, silence is complicity. We stand with the Palestinian people in their struggle for freedom, dignity, and human rights."*
+
+🟢⚪🔴 #FreePalestine 🔴⚪🟢

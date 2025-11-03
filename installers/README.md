@@ -24,10 +24,10 @@ This directory contains platform-specific installers for Histofy v3, providing e
 ### macOS/Linux
 ```bash
 # Download and run installer
-curl -fsSL https://raw.githubusercontent.com/your-repo/histofy-v3/main/installers/macos/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/ishaq2321/histofy-v3/main/installers/macos/install.sh | bash
 
 # Or clone and run locally
-git clone https://github.com/your-repo/histofy-v3.git
+git clone https://github.com/ishaq2321/histofy-v3.git
 cd histofy-v3/installers/macos  # or linux
 chmod +x install.sh
 ./install.sh
@@ -36,10 +36,10 @@ chmod +x install.sh
 ### Windows
 ```powershell
 # Download and run installer
-iwr -useb https://raw.githubusercontent.com/your-repo/histofy-v3/main/installers/windows/install.ps1 | iex
+iwr -useb https://raw.githubusercontent.com/ishaq2321/histofy-v3/main/installers/windows/install.ps1 | iex
 
 # Or clone and run locally
-git clone https://github.com/your-repo/histofy-v3.git
+git clone https://github.com/ishaq2321/histofy-v3.git
 cd histofy-v3/installers/windows
 .\install.ps1
 ```
@@ -217,13 +217,20 @@ rm ~/histofy-functions.sh  # or histofy-functions.ps1
 
 ## Development
 
-### Local Development Installation
+### From Source (GitHub CLI)
+
 ```bash
-# Clone repository
-git clone https://github.com/your-repo/histofy-v3.git
+# Clone repository using GitHub CLI
+gh repo clone ishaq2321/histofy-v3
 cd histofy-v3
 
-# Install in development mode
+# Install dependencies
+npm install
+
+# Install globally from source
+npm install -g .
+
+# Or use the installer
 ./installers/macos/install.sh --dev-mode    # macOS
 ./installers/linux/install.sh --dev-mode   # Linux
 .\installers\windows\install.ps1 -DevMode  # Windows
@@ -246,7 +253,8 @@ cd histofy-v3
 - **Documentation**: [README.md](../README.md)
 - **Troubleshooting**: [TROUBLESHOOTING.md](../TROUBLESHOOTING.md)
 - **FAQ**: [FAQ.md](../FAQ.md)
-- **Issues**: [GitHub Issues](https://github.com/your-repo/histofy-v3/issues)
+- **Issues**: [GitHub Issues](https://github.com/ishaq2321/histofy-v3/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/ishaq2321/histofy-v3/discussions)
 
 ## License
 
