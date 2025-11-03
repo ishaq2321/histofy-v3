@@ -1851,6 +1851,309 @@ class GitManager {
       throw new Error(`Failed to get branches: ${error.message}`);
     }
   }
+
+  /**
+   * Get commit history with pagination support for streaming
+   * @param {Object} options - History options
+   * @returns {Promise<Array>} Array of commits
+   */
+  async getCommitHistory(options = {}) {
+    const {
+      since = null,
+      until = null,
+      author = null,
+      branch = null,
+      limit = 100,
+      offset = 0,
+      includeFiles = false,
+      includeDiffs = false,
+      format = 'full'
+    } = options;
+
+    try {
+      const logOptions = {
+        maxCount: limit,
+        from: branch || 'HEAD'
+      };
+
+      // Add filters
+      if (since) logOptions.since = since;
+      if (until) logOptions.until = until;
+      if (author) logOptions.author = author;
+
+      // Handle pagination with offset
+      if (offset > 0) {
+        logOptions.skip = offset;
+      }
+
+      // Get commit log
+      const log = await this.git.log(logOptions);
+      
+      // Process commits based on format
+      const commits = await Promise.all(log.all.map(async (commit) => {
+        const processedCommit = {
+          hash: commit.hash,
+          date: commit.date,
+          message: commit.message,
+          author: commit.author_name,
+          email: commit.author_email,
+          refs: commit.refs || ''
+        };
+
+        // Include file changes if requested
+        if (includeFiles) {
+          try {
+            const files = await this.git.show(['--name-status', '--format=', commit.hash]);
+            processedCommit.files = this.parseFileChanges(files);
+          } catch (error) {
+            processedCommit.files = [];
+          }
+        }
+
+        // Include diff if requested
+        if (includeDiffs) {
+          try {
+            const diff = await this.git.show([commit.hash]);
+            processedCommit.diff = diff;
+          } catch (error) {
+            processedCommit.diff = '';
+          }
+        }
+
+        return processedCommit;
+      }));
+
+      return commits;
+    } catch (error) {
+      throw new Error(`Failed to get commit history: ${error.message}`);
+    }
+  }
+
+  /**
+   * Parse file changes from git show output
+   * @private
+   */
+  parseFileChanges(output) {
+    if (!output || !output.trim()) {
+      return [];
+    }
+
+    return output.trim().split('\n').map(line => {
+      const parts = line.split('\t');
+      if (parts.length >= 2) {
+        return {
+          status: parts[0],
+          file: parts[1],
+          oldFile: parts[2] || null // For renames
+        };
+      }
+      return null;
+    }).filter(Boolean);
+  }
+
+  /**
+   * Get total commit count for a branch/range
+   * @param {Object} options - Count options
+   * @returns {Promise<number>} Total commit count
+   */
+  async getCommitCount(options = {}) {
+    const {
+      since = null,
+      until = null,
+      author = null,
+      branch = null
+    } = options;
+
+    try {
+      const args = ['rev-list', '--count'];
+      
+      if (since) args.push(`--since=${since}`);
+      if (until) args.push(`--until=${until}`);
+      if (author) args.push(`--author=${author}`);
+      
+      args.push(branch || 'HEAD');
+
+      const result = await this.git.raw(args);
+      return parseInt(result.trim(), 10);
+    } catch (error) {
+      throw new Error(`Failed to get commit count: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if repository needs optimization for better performance
+   * @returns {Promise<Object>} Optimization status
+   */
+  async checkOptimizationStatus() {
+    try {
+      const repoPath = this.repoPath;
+      const gitDir = path.join(repoPath, '.git');
+      
+      // Check if .git/objects/pack directory exists and has pack files
+      const packDir = path.join(gitDir, 'objects', 'pack');
+      let hasPackFiles = false;
+      let packFileCount = 0;
+      
+      try {
+        const packFiles = await fs.readdir(packDir);
+        packFileCount = packFiles.filter(f => f.endsWith('.pack')).length;
+        hasPackFiles = packFileCount > 0;
+      } catch (error) {
+        // Pack directory might not exist
+      }
+
+      // Check repository size
+      const stats = await this.getRepositoryStats();
+      
+      // Determine if optimization is needed
+      const needsOptimization = 
+        !hasPackFiles || 
+        packFileCount > 10 || 
+        stats.objectCount > 10000;
+
+      return {
+        needsOptimization,
+        hasPackFiles,
+        packFileCount,
+        objectCount: stats.objectCount,
+        repositorySize: stats.size,
+        recommendations: this.getOptimizationRecommendations({
+          hasPackFiles,
+          packFileCount,
+          objectCount: stats.objectCount
+        })
+      };
+    } catch (error) {
+      return {
+        needsOptimization: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Get repository statistics
+   * @private
+   */
+  async getRepositoryStats() {
+    try {
+      // Get object count
+      const objectCountResult = await this.git.raw(['count-objects', '-v']);
+      const objectCount = this.parseObjectCount(objectCountResult);
+
+      // Get repository size (approximate)
+      const gitDir = path.join(this.repoPath, '.git');
+      const size = await this.getDirectorySize(gitDir);
+
+      return {
+        objectCount,
+        size,
+        sizeFormatted: this.formatBytes(size)
+      };
+    } catch (error) {
+      return {
+        objectCount: 0,
+        size: 0,
+        sizeFormatted: '0 B'
+      };
+    }
+  }
+
+  /**
+   * Parse object count from git count-objects output
+   * @private
+   */
+  parseObjectCount(output) {
+    const lines = output.split('\n');
+    let totalObjects = 0;
+
+    lines.forEach(line => {
+      if (line.startsWith('count ')) {
+        totalObjects += parseInt(line.split(' ')[1], 10) || 0;
+      } else if (line.startsWith('in-pack ')) {
+        totalObjects += parseInt(line.split(' ')[1], 10) || 0;
+      }
+    });
+
+    return totalObjects;
+  }
+
+  /**
+   * Get directory size recursively
+   * @private
+   */
+  async getDirectorySize(dirPath) {
+    try {
+      const stats = await fs.stat(dirPath);
+      
+      if (stats.isFile()) {
+        return stats.size;
+      }
+      
+      if (stats.isDirectory()) {
+        const files = await fs.readdir(dirPath);
+        const sizes = await Promise.all(
+          files.map(file => this.getDirectorySize(path.join(dirPath, file)))
+        );
+        return sizes.reduce((total, size) => total + size, 0);
+      }
+      
+      return 0;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  /**
+   * Format bytes to human readable format
+   * @private
+   */
+  formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  }
+
+  /**
+   * Get optimization recommendations
+   * @private
+   */
+  getOptimizationRecommendations(stats) {
+    const recommendations = [];
+
+    if (!stats.hasPackFiles) {
+      recommendations.push({
+        type: 'pack',
+        priority: 'high',
+        message: 'Repository has no pack files',
+        action: 'Run git gc to pack objects for better performance'
+      });
+    }
+
+    if (stats.packFileCount > 10) {
+      recommendations.push({
+        type: 'repack',
+        priority: 'medium',
+        message: 'Too many pack files detected',
+        action: 'Run git repack to consolidate pack files'
+      });
+    }
+
+    if (stats.objectCount > 50000) {
+      recommendations.push({
+        type: 'aggressive_gc',
+        priority: 'medium',
+        message: 'Large number of objects detected',
+        action: 'Consider running git gc --aggressive for better optimization'
+      });
+    }
+
+    return recommendations;
+  }
 }
 
 module.exports = GitManager;

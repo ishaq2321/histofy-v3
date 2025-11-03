@@ -23,6 +23,7 @@ const {
 } = require('../utils');
 const DryRunManager = require('../utils/DryRunManager');
 const OperationHistory = require('../utils/OperationHistory');
+const HelpSystem = require('../utils/HelpSystem');
 
 const configManager = new ConfigManager();
 
@@ -363,6 +364,10 @@ async function commitCommand(messageArg, options) {
         args: { message: messageArg, ...options }
       }));
     }
+    
+    // Provide contextual help for the error
+    const helpSystem = new HelpSystem();
+    helpSystem.provideContextualHelp(error.message);
     
     if (options.verbose && error.stack) {
       console.log(chalk.gray('\nStack trace:'));

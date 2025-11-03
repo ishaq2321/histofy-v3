@@ -9,6 +9,8 @@
 const crypto = require('crypto');
 const chalk = require('chalk');
 const GitTransaction = require('./GitTransaction');
+const { PerformanceProfiler } = require('../utils/PerformanceProfiler');
+const AuditLogger = require('../utils/AuditLogger');
 
 class Operation {
   constructor(id, type, metadata = {}) {
@@ -138,14 +140,44 @@ class OperationManager {
     
     operation.markRunning();
 
+    // Log operation start to audit log
+    const auditLogger = AuditLogger.getInstance();
+    await auditLogger.logEvent('OPERATION_STARTED', {
+      operationId,
+      type,
+      metadata: this.sanitizeMetadata(metadata),
+      success: true
+    }, {
+      operation: {
+        id: operationId,
+        type,
+        startTime: operation.startTime
+      }
+    });
+
     // Create transaction if operation requires backup
     if (operation.requiresBackup() && metadata.repoPath) {
       try {
         operation.transaction = new GitTransaction(metadata.repoPath, operationId);
         await operation.transaction.createBackup();
         operation.requiresCleanup = true;
+        
+        // Log backup creation
+        await auditLogger.logEvent('BACKUP_CREATED', {
+          operationId,
+          backupPath: operation.transaction.backupPath,
+          success: true
+        });
+        
       } catch (error) {
         operation.fail(error);
+        
+        // Log backup failure
+        await auditLogger.logEvent('BACKUP_FAILED', {
+          operationId,
+          error: error.message,
+          success: false
+        });
         this.activeOperations.delete(operationId);
         throw new Error(`Failed to create backup for operation: ${error.message}`);
       }
@@ -165,6 +197,23 @@ class OperationManager {
 
     operation.complete(result);
     this.activeOperations.delete(operationId);
+
+    // Log operation completion
+    const auditLogger = AuditLogger.getInstance();
+    await auditLogger.logEvent('OPERATION_COMPLETED', {
+      operationId,
+      type: operation.type,
+      duration: operation.endTime - operation.startTime,
+      result: this.sanitizeResult(result),
+      success: true
+    }, {
+      operation: {
+        id: operationId,
+        type: operation.type,
+        startTime: operation.startTime,
+        endTime: operation.endTime
+      }
+    });
 
     // Commit transaction if exists
     if (operation.transaction) {
@@ -190,13 +239,46 @@ class OperationManager {
     operation.fail(error);
     this.activeOperations.delete(operationId);
 
+    // Log operation failure
+    const auditLogger = AuditLogger.getInstance();
+    await auditLogger.logEvent('OPERATION_FAILED', {
+      operationId,
+      type: operation.type,
+      duration: operation.endTime - operation.startTime,
+      error: error.message,
+      stack: error.stack,
+      success: false
+    }, {
+      operation: {
+        id: operationId,
+        type: operation.type,
+        startTime: operation.startTime,
+        endTime: operation.endTime
+      }
+    });
+
     // Rollback transaction if exists
     if (operation.transaction) {
       try {
         await operation.transaction.rollback();
         console.log(chalk.blue('Repository state restored from backup'));
+        
+        // Log successful rollback
+        await auditLogger.logEvent('ROLLBACK_COMPLETED', {
+          operationId,
+          backupPath: operation.transaction.backupPath,
+          success: true
+        });
+        
       } catch (rollbackError) {
         console.error(chalk.red(`Failed to rollback transaction: ${rollbackError.message}`));
+        
+        // Log rollback failure
+        await auditLogger.logEvent('ROLLBACK_FAILED', {
+          operationId,
+          error: rollbackError.message,
+          success: false
+        });
       }
     }
 
@@ -383,15 +465,21 @@ class OperationManager {
   }
 
   /**
-   * Execute operation with automatic management
+   * Execute operation with automatic management and performance monitoring
    */
   static async execute(type, operation, metadata = {}) {
     const manager = OperationManager.getInstance();
+    const profiler = PerformanceProfiler.getInstance();
     let operationId = null;
 
     try {
       operationId = await manager.startOperation(type, metadata);
-      const result = await operation(operationId);
+      
+      // Profile the operation if profiling is enabled
+      const result = await profiler.profileCommand(type, async () => {
+        return await operation(operationId);
+      }, { operationId, metadata });
+      
       await manager.completeOperation(operationId, result);
       
       return {
@@ -413,4 +501,43 @@ class OperationManager {
   }
 }
 
-module.exports = OperationManager;
+module.exports = OperationManager;  
+/**
+   * Sanitize metadata for audit logging
+   */
+  sanitizeMetadata(metadata) {
+    const sanitized = { ...metadata };
+    
+    // Remove sensitive information
+    const sensitiveFields = ['token', 'password', 'key', 'secret', 'auth'];
+    
+    for (const field of sensitiveFields) {
+      if (sanitized[field]) {
+        sanitized[field] = '[REDACTED]';
+      }
+    }
+    
+    return sanitized;
+  }
+
+  /**
+   * Sanitize result data for audit logging
+   */
+  sanitizeResult(result) {
+    if (!result || typeof result !== 'object') {
+      return result;
+    }
+    
+    const sanitized = { ...result };
+    
+    // Remove sensitive information
+    const sensitiveFields = ['token', 'password', 'key', 'secret', 'auth'];
+    
+    for (const field of sensitiveFields) {
+      if (sanitized[field]) {
+        sanitized[field] = '[REDACTED]';
+      }
+    }
+    
+    return sanitized;
+  }

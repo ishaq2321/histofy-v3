@@ -378,7 +378,8 @@ install_functions() {
             functions_file="$SCRIPT_DIR/bash_functions.sh"
             ;;
         "zsh")
-            functions_file="$SCRIPT_DIR/zsh_functions.sh"
+            # Use bash functions for zsh compatibility
+            functions_file="$SCRIPT_DIR/bash_functions.sh"
             ;;
         "fish")
             functions_file="$SCRIPT_DIR/fish_functions.sh"

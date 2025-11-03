@@ -367,7 +367,7 @@ class ArrayUtils {
 }
 
 // Import new enhanced utilities
-const EnhancedValidationUtils = require('./validation');
+const EnhancedValidationUtils = require('./ValidationUtils');
 const { ErrorHandler, HistofyError, ValidationError, GitError, NetworkError, FileSystemError, ConfigurationError } = require('./errors');
 const { ProgressIndicator, MultiStepProgress, ProgressUtils } = require('./progress');
 const FeedbackUtils = require('./feedback');
